@@ -214,22 +214,22 @@ barplot(table(data$sch))
 We can see that there are very few values for people that didn't finish school, so we can group them by elementary, middle and high.
 
 ```{r}
-levels(data$sch) <- c(levels(data$sch),"nosc", "elem", "midl", "high", "fsch", "scol", "asoc", "bach", "advd")
+levels(data$sch) <- c(levels(data$sch),"nosc", "fsch", "scol", "asoc", "bach", "advd")
 data$sch[data$sch == 0] <- 'nosc'
-data$sch[data$sch == 1] <- 'elem'
-data$sch[data$sch == 2] <- 'elem'
-data$sch[data$sch == 2.5] <- 'elem'
-data$sch[data$sch == 3] <- 'elem'
-data$sch[data$sch == 4] <- 'elem'
-data$sch[data$sch == 5] <- 'elem'
-data$sch[data$sch == 5.5] <- 'midl'
-data$sch[data$sch == 6] <- 'midl'
-data$sch[data$sch == 7] <- 'midl'
-data$sch[data$sch == 7.5] <- 'midl'
-data$sch[data$sch == 8] <- 'midl'
-data$sch[data$sch == 9] <- 'high'
-data$sch[data$sch == 10] <- 'high'
-data$sch[data$sch == 11] <- 'high'
+data$sch[data$sch == 1] <- 'nosc'
+data$sch[data$sch == 2] <- 'nosc'
+data$sch[data$sch == 2.5] <- 'nosc'
+data$sch[data$sch == 3] <- 'nosc'
+data$sch[data$sch == 4] <- 'nosc'
+data$sch[data$sch == 5] <- 'nosc'
+data$sch[data$sch == 5.5] <- 'nosc'
+data$sch[data$sch == 6] <- 'nosc'
+data$sch[data$sch == 7] <- 'nosc'
+data$sch[data$sch == 7.5] <- 'nosc'
+data$sch[data$sch == 8] <- 'nosc'
+data$sch[data$sch == 9] <- 'nosc'
+data$sch[data$sch == 10] <- 'nosc'
+data$sch[data$sch == 11] <- 'nosc'
 data$sch[data$sch == 12] <- 'fsch'
 data$sch[data$sch == 13] <- 'scol'
 data$sch[data$sch == 14] <- 'asoc'
@@ -395,7 +395,7 @@ bartlett.test(data$realincwage ~ data$sex)
 In general, ANOVA’s are considered to be fairly robust against violations of the equal variances assumption as long as each group has the same sample size, which is the case: 
 
 ```{r}
-summary(as.factor(data$sex))
+summary(data$sex)
 ```
 
 ```{r}
@@ -517,19 +517,30 @@ sum(is.na(training_set$statefip))
 Let's define the variables we will use in the regression.
 
 ```{r}
-data.reg <- data[c("year", "numprec", "region", "metro", "relate", "age", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "uhrswork", "realincwage")]
+data.reg <- data[c("year", "numprec", "region", "metro", "relate", "age", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "wkswork1", "uhrswork", "realincwage")]
 
-attach(data.reg)
+set.seed(1)
+
+train <- sample(1:nrow(X), nrow(X)*0.75)
+test <- (-train)
+y.test <- y[test]
 ```
 
 
 We will build the linear regression to identify which factors influence income the most.
 
 ```{r}
-reg.out <- lm(log(realincwage) ~ . -numprec, data = data.reg, weights=numprec)
+reg.out <- lm(log(realincwage) ~ . -numprec, data = data.reg[train,], weights=numprec)
 summary(reg.out)
 
 ```
+Calculating the MSE on the test set:
+```{r}
+lm.pred <- predict(reg.out, newdata = data.reg[test, ])
+mean((lm.pred - y.test)^2)
+```
+
+
 ```{r}
 plot(fitted.values(reg.out), residuals(reg.out), pch=20)
 abline(h=0, col="blue", lwd=2)
@@ -538,28 +549,31 @@ abline(h=0, col="blue", lwd=2)
 ## Forward selection
 ```{r}
 library(leaps)
-regfit.fwd <- regsubsets(log(realincwage) ~ . ,data=data.reg, weights = data.reg$numprec, method="forward", nvmax=100)
+regfit.fwd <- regsubsets(log(realincwage) ~ . -industry-occupation-classwkr, data=data.reg, weights = data.reg$numprec, method="forward", nvmax=100)
 fwd.summary <-summary(regfit.fwd)
 plot(regfit.fwd, scale="bic")
 
 ```
 
+
 ```{r}
-fwd.summary <- summary(regfit.fwd)
 plot(fwd.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
-which.min(fwd.summary$bic)
-#points(6,fwd.summary$bic[6],col="red",cex=2,pch=20)
+n.fwd <- which.min(fwd.summary$bic)
+points(n.fwd,fwd.summary$bic[n.fwd],col="red",cex=2,pch=20)
 ```
 
 ```{r}
-fwd.summary$rsq
+plot(fwd.summary$adjr2,xlab="Number of Variables",ylab="Adj R2",type='l')
+n.fwd <- which.max(fwd.summary$adjr2)
+points(n.fwd,fwd.summary$adjr2[n.fwd],col="red",cex=2,pch=20)
 ```
 
 
 ```{r}
-summary(regfit.fwd,10)
+plot(fwd.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+n.fwd <- which.min(fwd.summary$cp)
+points(n.fwd,fwd.summary$cp[n.fwd],col="red",cex=2,pch=20)
 ```
-
 
 
 ## Backward selection
@@ -568,13 +582,92 @@ regfit.bwd <- regsubsets(log(realincwage)~. -numprec, data=data.reg, weights=dat
 bwd.summary <-summary(regfit.bwd)
 plot(regfit.fwd, scale="bic")
 
+```
+```{r}
 plot(bwd.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
-which.min(bwd.summary$bic)
-#points(8,bwd.summary$bic[8],col="red",cex=2,pch=20)
+n.bwd <- which.min(bwd.summary$bic)
+points(n.bwd,bwd.summary$bic[n.bwd],col="red",cex=2,pch=20)
+```
+```{r}
+plot(bwd.summary$adjr2,xlab="Number of Variables",ylab="Adj R2",type='l')
+n.bwd <- which.max(bwd.summary$adjr2)
+points(n.bwd,bwd.summary$adjr2[n.bwd],col="red",cex=2,pch=20)
+```
+
+```{r}
+plot(bwd.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+n.bwd <- which.min(bwd.summary$cp)
+points(n.bwd,bwd.summary$cp[n.bwd],col="red",cex=2,pch=20)
 ```
 
 
 ```{r}
-coef(regfit.bwd,9)
+coef(regfit.bwd,n.bwd)
+```
+
+
+## Ridge regression
+```{r}
+library(glmnet)
+
+X <- model.matrix(realincwage ~ . -numprec, data = data.reg)
+X <- X[,-1]
+y <- data.reg$realincwage
+#grid <- 10^seq(10, -2, length=100)
+
+ridge.mod <- glmnet(X, y, alpha=0, weights=data.reg$numprec)
+plot(ridge.mod, label=TRUE)
+
+```
+```{r}
+cv.out <- cv.glmnet(X[train, ], y[train], alpha = 0, nfold=10, weights=data.reg$numprec[train], type.measure = "mse")
+plot(cv.out)
+```
+
+```{r}
+i.bestlam <- which.min(cv.out$cvm)
+i.bestlam 
+bestlam <- cv.out$lambda[i.bestlam]
+bestlam
+cv.out$lambda.min
+cv.out$lambda.1se
+
+```
+
+```{r}
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = X[test, ])
+mean((ridge.pred - y.test)^2)
+```
+```{r}
+ridge.pred2 <- predict(ridge.mod, s = 0, newx = X[test, ])
+mean((ridge.pred2 - y.test)^2)
+```
+
+
+```{r}
+out <- glmnet(X, y, alpha = 0, weights = data.reg$numprec)
+predict(out, type = "coefficients", s = bestlam)
+```
+## Lasso Regression
+
+```{r}
+lasso.mod <- glmnet(X[train,],y[train],alpha=1,lambda=grid)
+plot(lasso.mod, label=TRUE)
+```
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(X[train,], y[train], alpha=1)
+plot(cv.out)
+```
+
+```{r}
+bestlam <- cv.out$lambda.min
+lasso.pred <- predict(lasso.mod, s=bestlam, newx=X[test,])
+mean((lasso.pred-y.test)^2)
+```
+
+```{r}
+lasso.pred <- predict(lasso.mod, s=0, newx=X[test,])
+mean((lasso.pred-y.test)^2)
 ```
 
