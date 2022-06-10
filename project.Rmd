@@ -12,7 +12,7 @@ library(ggplot2)
 Reading the dataset and encoding character variables as factors:
 
 ```{r}
-curPop <- read.csv("C:/Users/difra/Desktop/CurrentPopulationSurvey.csv/CurrentPopulationSurvey.csv")
+curPop <- read.csv("C:\\Users\\Anna\\Documents\\Personal_files\\Uni_DS\\Courses\\Statistical_Learning\\Mod_B\\project\\gender_gap_dataset\\CurrentPopulationSurvey.csv")
 
 dim(curPop)
 
