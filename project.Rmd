@@ -509,7 +509,7 @@ abline(h=0, col="blue", lwd=2)
 ## Forward selection
 ```{r}
 library(leaps)
-regfit.fwd <- regsubsets(realincwage~.,data=data.reg,method="forward", nvmax=100)
+regfit.fwd <- regsubsets(log(realincwage) ~ . ,data=data.reg, weights = data.reg$numprec, method="forward", nvmax=100)
 fwd.summary <-summary(regfit.fwd)
 plot(regfit.fwd, scale="bic")
 
@@ -528,14 +528,14 @@ fwd.summary$rsq
 
 
 ```{r}
-summary(regfit.fwd,89)
+summary(regfit.fwd,10)
 ```
 
 
 
 ## Backward selection
 ```{r}
-regfit.bwd <- regsubsets(realincwage~.,data=data.reg,method="backward")
+regfit.bwd <- regsubsets(log(realincwage)~. -numprec, data=data.reg, weights=data.reg$numprec, method="backward", nvmax=100)
 bwd.summary <-summary(regfit.bwd)
 plot(regfit.fwd, scale="bic")
 
@@ -543,6 +543,8 @@ plot(bwd.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
 which.min(bwd.summary$bic)
 #points(8,bwd.summary$bic[8],col="red",cex=2,pch=20)
 ```
+
+
 ```{r}
 coef(regfit.bwd,9)
 ```
