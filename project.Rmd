@@ -12,9 +12,7 @@ library(ggplot2)
 Reading the dataset and encoding character variables as factors:
 
 ```{r}
-curPop <- read.csv("C:\\Users\\Anna\\Documents\\Personal_files\\Uni_DS\\Courses\\Statistical_Learning\\Mod_B\\project\\gender_gap_dataset\\CurrentPopulationSurvey.csv")
-
-attach(curPop)
+curPop <- read.csv("C:/Users/difra/Desktop/CurrentPopulationSurvey.csv/CurrentPopulationSurvey.csv")
 
 dim(curPop)
 
@@ -92,7 +90,7 @@ As the year ranges from 1981 to 2013, we will need the inflation variable (*infl
 We can see that we have several variables for income, which seem identical, *incwage*, *niincwage*, *incwageman*.
 Let's check if they are identical:
 ```{r}
-sum(incwage == niincwage) == sum(incwage == incwageman)
+sum(data$incwage == data$niincwage) == sum(data$incwage == data$incwageman)
 ```
 We verified, that the variables are identical, so we will only use the *incwage* column.
 
@@ -101,14 +99,14 @@ Another column for wage is *tcincwage*. Let's plot the boxplots to compare it wi
 `
 
 ```{r}
-boxplot(incwage, tcincwage)
+boxplot(data$incwage, data$tcincwage)
 ```
 
 We can see that the values are similar for the income below 200 000, however, the *incwage* contains more extreme values. However, as *incwageman* column includes imputed values, we will stick to *incwage*.
 
 Thus, we chose the following columns:
 ```{r}
-detach(curPop)
+
 data <- curPop[c("year", "serial", "numprec", "hwtsupp", "region", "statefip", "metro", "metarea", "county", "pernum", "wtsupp", "relate", "age", "sex", "race", "marst", "bpl", "yrimmig", "citizen", "mbpl", "fbpl", "nativity", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "wkswork1", "hrswork", "uhrswork", "union", "incwage", "inclongj", "oincwage", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage", "hrwage", "inflate", "realhrwage")]
 
 ```
@@ -121,7 +119,7 @@ data$realincwage <- data$incwage*data$inflate
 Next we represent the necessary columns as factors.
 
 ```{r}
-col.list <- c("region", "statefip", "metro", "metarea", "county", "relate", "sex", "race", "marst", "bpl", "citizen", "mbpl", "fbpl", "nativity", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "union", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage")
+col.list <- c("region", "statefip", "metro", "metarea", "county", "relate", "sex", "race", "marst", "bpl", "citizen", "mbpl", "fbpl", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "union", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage")
 
 for (col in col.list) {
   data[[col]] <- as.factor(data[[col]])
@@ -150,31 +148,20 @@ data$metarea <- NULL
 data$educ99 <- NULL
 data$county <- NULL
 data$empstat <- NULL
+
 colSums(is.na(data))
 ```
 
-For the column nativity, which indicates a foreign birthplace, if we omit the null values, only the people with foreign birthplaces will remain in the dataset Thus, we will fill the null values with 0s.
-
-```{r}
-#levels(data$nativity) <- c(levels(data$nativity), 0)
-#data$nativity[is.na(data$nativity)] <- 0
-#levels(data$bpl) <- c(levels(data$bpl), 0)
-#data$bpl[is.na(data$bpl)] <- 0
-#levels(data$mbpl) <- c(levels(data$mbpl), 0)
-#data$mbpl[is.na(data$mbpl)] <- 0
-#levels(data$fbpl) <- c(levels(data$fbpl), 0)
-#data$fbpl[is.na(data$fbpl)] <- 0
-
-```
 
 
 Now, we can omit the null values.
 ```{r}
 data <- na.omit(data)
 summary(data)
-attach(data)
+
 
 ```
+
 ###EDA
 
 Let's plot the distribution of the *realincwage*.
@@ -187,35 +174,35 @@ We can see that the distribution is highly left skewed. Thus, we might need to u
 
 par(mfrow=c(2,2))
 # X-axis grid
-x2 <- seq(min(realincwage), max(realincwage), length = 40)
+x2 <- seq(min(data$realincwage), max(data$realincwage), length = 40)
 
 # Normal curve
-fun <- dnorm(x2, mean = mean(realincwage), sd = sd(realincwage))
+fun <- dnorm(x2, mean = mean(data$realincwage), sd = sd(data$realincwage))
 
 # Histogram
-hist(realincwage, prob = TRUE, col = "yellow",
+hist(data$realincwage, prob = TRUE, col = "yellow",
      ylim = c(0, max(fun)),
      main = "Histogram of income", sub= "Comparison with normal curve")
 lines(x2, fun, col = "purple", lwd = 2)
 
-qqnorm(realincwage)
-qqline(realincwage)
+qqnorm(data$realincwage)
+qqline(data$realincwage)
 
-logrealincwage <-log(realincwage)
+data$logrealincwage <-log(data$realincwage)
 # X-axis grid
-x2 <- seq(min(logrealincwage), max(logrealincwage), length = 40)
+x2 <- seq(min(data$logrealincwage), max(data$logrealincwage), length = 40)
 
 # Normal curve
-fun <- dnorm(x2, mean = mean(logrealincwage), sd = sd(logrealincwage))
+fun <- dnorm(x2, mean = mean(data$logrealincwage), sd = sd(data$logrealincwage))
 
 # Histogram
-hist(logrealincwage, prob = TRUE, col = "yellow",
+hist(data$logrealincwage, prob = TRUE, col = "yellow",
      ylim = c(0, max(fun)),
      main = "Histogram of log-transformed income", sub= "Comparison with normal curve")
 lines(x2, fun, col = "purple", lwd = 2)
 
-qqnorm(logrealincwage)
-qqline(logrealincwage)
+qqnorm(data$logrealincwage)
+qqline(data$logrealincwage)
 
 ```
 
@@ -251,7 +238,8 @@ data$sch[data$sch == 18] <- 'advd'
 data$sch <- droplevels(data$sch)
 barplot(table(data$sch))
 ```
-Let's have a look at region variable.
+
+Let's have a look at region variable. 
 ```{r}
 barplot(table(data$region))
 ```
@@ -373,13 +361,12 @@ Let's compare the median income for males and females to see if there is a diffe
 
 ```{r}
 
-group_median = aggregate(realincwage, list(sex), FUN=median) 
+group_median = aggregate(data$realincwage, list(data$sex), FUN=median) 
 colnames(group_median) <- c("Sex", "Median income ($)")
+levels(group_median$Sex) <- c("Male","Female")
 
-group_median$Sex[group_median$Sex == 1] <- "Male"
-group_median$Sex[group_median$Sex== 2] <- "Female"
 
-group_mean = aggregate(realincwage, list(sex), FUN=mean) 
+group_mean = aggregate(data$realincwage, list(data$sex), FUN=mean) 
 colnames(group_mean) <- c("Sex", "Average income ($)")
 group_mean$Sex <- NULL
 cbind(group_median, group_mean)
@@ -396,23 +383,23 @@ The interquartile range for males is larger than the one for females so the vari
 
 ```{r}
 par(mfrow = c(2,1))
-qplot(as.factor(sex), realincwage, geom = "boxplot", data = data, na.rm=TRUE, fill=as.factor(sex))+coord_cartesian(ylim = c(10000, 70000))+labs(title = "Mean income by sex", x ="Sex", y="Income level")+ scale_fill_discrete(name = "Sex", labels = c("Males", "Females"))
+qplot(as.factor(sex), data$realincwage, geom = "boxplot", data = data, na.rm=TRUE, fill=as.factor(sex))+coord_cartesian(ylim = c(10000, 70000))+labs(title = "Mean income by sex", x ="Sex", y="Income level")+ scale_fill_discrete(name = "Sex", labels = c("Males", "Females"))
 
-qplot(as.factor(sex), realincwage, geom = "boxplot", data = data, na.rm=TRUE, fill=as.factor(sex))+coord_cartesian(ylim = c(7000, 1000000))+labs(title = "Mean income by sex", x ="Sex", y="Income level")+ scale_fill_discrete(name = "Sex", labels = c("Males", "Females"))
+qplot(as.factor(sex), data$realincwage, geom = "boxplot", data = data, na.rm=TRUE, fill=as.factor(sex))+coord_cartesian(ylim = c(7000, 1000000))+labs(title = "Mean income by sex", x ="Sex", y="Income level")+ scale_fill_discrete(name = "Sex", labels = c("Males", "Females"))
 ```
 We can run a Bartlett’s Test to determine whether or not the income variances between males and females are different. Considering a 0.05 significance level, the p-value of the test is a number way smaller than that so we have evidence to say that the samples do not all have equal variances. 
 
 ```{r}
-bartlett.test(realincwage ~ sex)
+bartlett.test(data$realincwage ~ data$sex)
 ```
 In general, ANOVA’s are considered to be fairly robust against violations of the equal variances assumption as long as each group has the same sample size, which is the case: 
 
 ```{r}
-summary(as.factor(sex))
+summary(as.factor(data$sex))
 ```
 
 ```{r}
-res.aov <- aov(log(realincwage) ~ sex, data = data)
+res.aov <- aov(log(data$realincwage) ~ data$sex, data = data)
 # Summary of the analysis
 summary(res.aov)
 ```
@@ -421,7 +408,7 @@ summary(res.aov)
 As the p-value is less than the significance level 0.05, we can conclude that there are significant differences for what concerns average income between the two males and females groups. Still, running an ANOVA test with the assumption of equality of variances that is violated can cause more frequent type I error. Thus let's try with Welch's ANOVA. For normal, different-variance, and balanced data (i.e. same-size samples), Welch’s has the most power and the lowest type I error rate. By looking at the result of this test we can draw the same conclusion as for the ANOVA test. 
 
 ```{r}
-oneway.test(log(realincwage) ~ sex, data = data, var.equal = FALSE)
+oneway.test(log(data$realincwage) ~ data$sex, data = data, var.equal = FALSE)
 ```
 
 - Check that residuals are normally distributed
@@ -456,7 +443,7 @@ total
 ```
 
 ```{r}
-CombinedPlot=ggplot(data, aes(x=as.factor(race), y=realincwage, fill=as.factor(sex)))+  geom_boxplot()+coord_cartesian(ylim = c(9000, 90000))+scale_fill_discrete(name = "Sex", labels = c("Male", "Female"))+ labs(title  = "Boxplot of income grouped by sex and race", x ="Race", y="Income level ($)")+scale_x_discrete(labels=c("1" = "Black", "2" = "Hispanic", "3" = "Other", "4"="White"))
+CombinedPlot=ggplot(data, aes(x=as.factor(data$race), y=data$realincwage, fill=as.factor(data$sex)))+  geom_boxplot()+coord_cartesian(ylim = c(9000, 90000))+scale_fill_discrete(name = "Sex", labels = c("Male", "Female"))+ labs(title  = "Boxplot of income grouped by sex and race", x ="Race", y="Income level ($)")+scale_x_discrete(labels=c("1" = "Black", "2" = "Hispanic", "3" = "Other", "4"="White"))
 
 CombinedPlot
 ```
@@ -481,12 +468,47 @@ data$classwkr <- gsub('21', 'Private sector',data$classwkr)
 
 ```{r}
 data$classwkr <- as.factor(data$classwkr)
+
 summary(data$classwkr)
+
 ```
 
 ```{r}
+# calculate the percentages
+summary(data$realincwage[data$classwkr=="Private sector"])
+```
+
+
+
+```{r}
+# plotting graph
+ggplot(data, aes(fill = data$sex,
+                      y = data$realincwage, x = data$classwkr))+
+geom_bar(position = "stack", stat = "identity")+coord_cartesian(ylim = c(5000, 1300999))
+ggtitle("Weather Data of 4 Cities !")+
+theme(plot.title = element_text(hjust = 0.5))
+```
+
+###Logistic Regression
+
+```{r}
+###LOGISTIC REGRES
+data.logistic <- data[, -c(1,4)-6-c(8,10)-c(15,18)-c(23,25)-27-c(30,42)]
+size<- round(.8 * dim(data)[1])  # training set size
+training_set <- data[1:size,]
+testing_set <- data[-(1:size),]
 
 ```
+summary(training_set)
+```{r}
+m1 <- glm(training_set$binaryincome ~ training_set$year+training_set$region+training_set$statefip, data = training_set, family = binomial('logit'))
+summary(m1)
+```
+
+```{r}
+sum(is.na(training_set$statefip))
+```
+
 
 `
 
