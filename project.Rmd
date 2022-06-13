@@ -107,7 +107,7 @@ We can see that the values are similar for the income below 200 000, however, th
 Thus, we chose the following columns:
 ```{r}
 
-data <- curPop[c("year", "serial", "numprec", "hwtsupp", "region", "statefip", "metro", "metarea", "county", "pernum", "wtsupp", "relate", "age", "sex", "race", "marst", "bpl", "yrimmig", "citizen", "mbpl", "fbpl", "nativity", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "wkswork1", "hrswork", "uhrswork", "union", "incwage", "inclongj", "oincwage", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage", "hrwage", "inflate", "realhrwage")]
+data <- curPop[c("year", "serial", "numprec", "wtsupp", "region", "statefip", "metro", "metarea", "county", "pernum", "wtsupp", "relate", "age", "sex", "race", "marst", "bpl", "yrimmig", "citizen", "mbpl", "fbpl", "nativity", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "wkswork1", "hrswork", "uhrswork", "union", "incwage", "inclongj", "oincwage", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage", "hrwage", "inflate", "realhrwage")]
 
 ```
 
@@ -119,7 +119,7 @@ data$realincwage <- data$incwage*data$inflate
 Next we represent the necessary columns as factors.
 
 ```{r}
-col.list <- c("region", "statefip", "metro", "metarea", "county", "relate", "sex", "race", "marst", "bpl", "citizen", "mbpl", "fbpl", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "union", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage")
+col.list <- c("region", "statefip", "metro", "metarea", "county", "relate", "sex", "race", "marst", "bpl", "citizen", "mbpl", "fbpl", "nativity", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "union", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage")
 
 for (col in col.list) {
   data[[col]] <- as.factor(data[[col]])
@@ -164,7 +164,7 @@ summary(data)
 
 ###EDA
 
-Let's plot the distribution of the *realincwage*.
+Let's plot the distribution of the *incwage*.
 
 
 We can see that the distribution is highly left skewed. Thus, we might need to use the log of income.
@@ -274,7 +274,45 @@ barplot(table(data$marst))
 barplot(table(data$nativity))
 ```
 
-Let's plot the correlation matrix of the meaningful variables in our dataset.
+The class of workers variable is organised into 7 levels:(Self-empl=10, private sector=21, government=24, Federal govt employee=25, State govt employee=27, Local govt employee=28, Unpaid family worker=29). Since self-employed and unpaid family worker are only a small amount of units compared to all the rest we can combine them into a singular class: "Other". 
+
+```{r}
+summary(as.factor(data$classwkr))
+data <- data[!(data$classwkr=="10" | data$classwkr=="29"),]
+
+data$classwkr <- gsub('24', 'Public sector',data$classwkr)
+data$classwkr <- gsub('25', 'Public sector',data$classwkr)
+data$classwkr <- gsub('27', 'Public sector', data$classwkr)
+data$classwkr <- gsub('28', 'Public sector', data$classwkr)
+
+data$classwkr <- gsub('21', 'Private sector',data$classwkr)
+
+```
+
+```{r}
+data$classwkr <- as.factor(data$classwkr)
+
+summary(data$classwkr)
+
+```
+
+```{r}
+# calculate the percentages
+summary(data$realincwage[data$classwkr=="Private sector"])
+```
+
+
+
+```{r}
+# plotting graph -- why weather data in ggtitle?
+ggplot(data, aes(fill = data$sex,
+                      y = data$realincwage, x = data$classwkr))+
+geom_bar(position = "stack", stat = "identity")+coord_cartesian(ylim = c(5000, 1300999))
+ggtitle("Weather Data of 4 Cities !")+
+theme(plot.title = element_text(hjust = 0.5))
+```
+
+Let's plot the correlation matrix of the categorical variables in our dataset.
 
 ```{r}
 data.cat <- data[c("region", "statefip", "metro", "relate", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "ftype")]
@@ -304,11 +342,6 @@ heatmap(mat$statistics)
 We can see theat *region* is correlated with *statefip*, *relate* with *ftype* and *race* with *hispan*. So we will use only 1 of the variables in e ach pair: *region*, *relate* and *race*.
 
 
-
-```{r}
-counts <- table(data$realincwage, data$sch)
-counts
-```
 
 ```{r}
 
@@ -403,9 +436,14 @@ res.aov <- aov(log(data$realincwage) ~ data$sex, data = data)
 # Summary of the analysis
 summary(res.aov)
 ```
+```{r}
+res.aov <- aov(log(data.reg$realincwage) ~ ., data = data.reg)
+# Summary of the analysis
+summary(res.aov)
+```
 
 
-As the p-value is less than the significance level 0.05, we can conclude that there are significant differences for what concerns average income between the two males and females groups. Still, running an ANOVA test with the assumption of equality of variances that is violated can cause more frequent type I error. Thus let's try with Welch's ANOVA. For normal, different-variance, and balanced data (i.e. same-size samples), Welch’s has the most power and the lowest type I error rate. By looking at the result of this test we can draw the same conclusion as for the ANOVA test. 
+As the p-value is less than the significance level 0.05, we can conclude that there are significant differences in income between males and females. Still, running an ANOVA test with the assumption of equality of variances that is violated can cause more frequent type I error. Thus let's try with Welch's ANOVA. For normal, different-variance, and balanced data (i.e. same-size samples), Welch’s has the most power and the lowest type I error rate. By looking at the result of this test we can draw the same conclusion as for the ANOVA test. 
 
 ```{r}
 oneway.test(log(data$realincwage) ~ data$sex, data = data, var.equal = FALSE)
@@ -443,51 +481,38 @@ total
 ```
 
 ```{r}
-CombinedPlot=ggplot(data, aes(x=as.factor(data$race), y=data$realincwage, fill=as.factor(data$sex)))+  geom_boxplot()+coord_cartesian(ylim = c(9000, 90000))+scale_fill_discrete(name = "Sex", labels = c("Male", "Female"))+ labs(title  = "Boxplot of income grouped by sex and race", x ="Race", y="Income level ($)")+scale_x_discrete(labels=c("1" = "Black", "2" = "Hispanic", "3" = "Other", "4"="White"))
+CombinedPlot=ggplot(data, aes(x=as.factor(data$race), y=data$realincwage, fill=as.factor(data$sex)))+  geom_boxplot()+coord_cartesian(ylim = c(9000, 150000))+scale_fill_discrete(name = "Sex", labels = c("Male", "Female"))+ labs(title  = "Boxplot of income grouped by sex and race", x ="Race", y="Income level ($)")+scale_x_discrete(labels=c("1" = "Black", "2" = "Hispanic", "3" = "Other", "4"="White"))
+
+CombinedPlot
+```
+```{r}
+group_mean = aggregate(data$realincwage, list(data$sex, data$sch), FUN=mean) 
+colnames(group_mean) <- c("Sex", "Education", "Average income ($)")
+levels(group_mean$Sex) <- c("Male", "Female")
+levels(group_mean$Education) <- c("No school", "12 years of school ", "Some college", "Associate degree", "Bachelor's degree", "Advanced degree")
+
+males = group_mean[group_mean$Sex=="Male", ]
+males <- males[,2:3]
+colnames(males) <- c("Education", "Average male income ($)")
+females = group_mean[group_mean$Sex=="Female", ]
+females <- females[,2:3]
+colnames(females) <- c("Education", "Average female income ($)")
+
+#new_dataf <- data.frame(first_column = group_mean[group_mean$`Average income ($)`&group_mean$Sex=="Male")
+total <- merge(males,females,by="Education")
+
+total<- cbind(total, c(total$`Average male income ($)`-total$`Average female income ($)`))
+colnames(total)[4] <- "Abs difference in income"
+
+total
+```
+
+```{r}
+CombinedPlot=ggplot(data, aes(x=as.factor(data$sch), y=data$realincwage, fill=as.factor(data$sex)))+  geom_boxplot()+coord_cartesian(ylim = c(9000, 150000))+scale_fill_discrete(name = "Sex", labels = c("Male", "Female"))+ labs(title  = "Boxplot of income grouped by sex and education", x ="Education", y="Income level ($)")+scale_x_discrete(labels=c("nosc" = "No school", "fsch" = "12 years of school", "scol" = "Some college", "asoc"="Associate degree", "bach" = "Bachelor's degree", "advd" = "Advanced degree"))
 
 CombinedPlot
 ```
 
-###
-The class of workers variable is organised into 7 levels:(Self-empl=10, private sector=21, government=24, Federal govt employee=25, State govt employee=27, Local govt employee=28, Unpaid family worker=29). Since self-employed and unpaid family worker are only a small amount of units compared to all the rest we can combine them into a singular class: "Other". 
-
-```{r}
-summary(as.factor(data$classwkr))
-data$classwkr <- gsub('10', 'Other', data$classwkr)
-data$classwkr <- gsub('29', 'Other', data$classwkr)
-
-data$classwkr <- gsub('24', 'Public sector',data$classwkr)
-data$classwkr <- gsub('25', 'Public sector',data$classwkr)
-data$classwkr <- gsub('27', 'Public sector', data$classwkr)
-data$classwkr <- gsub('28', 'Public sector', data$classwkr)
-
-data$classwkr <- gsub('21', 'Private sector',data$classwkr)
-
-```
-
-
-```{r}
-data$classwkr <- as.factor(data$classwkr)
-
-summary(data$classwkr)
-
-```
-
-```{r}
-# calculate the percentages
-summary(data$realincwage[data$classwkr=="Private sector"])
-```
-
-
-
-```{r}
-# plotting graph
-ggplot(data, aes(fill = data$sex,
-                      y = data$realincwage, x = data$classwkr))+
-geom_bar(position = "stack", stat = "identity")+coord_cartesian(ylim = c(5000, 1300999))
-ggtitle("Weather Data of 4 Cities !")+
-theme(plot.title = element_text(hjust = 0.5))
-```
 
 ###Logistic Regression
 
@@ -510,7 +535,49 @@ sum(is.na(training_set$statefip))
 ```
 
 
-`
+## KNN
+As the KNN algorithm uses numeric methods, we need to make sure all the variables are numeric.
+
+```{r}
+var.knn <- c("year", "numprec", "region", "metro", "relate", "age", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "wkswork1", "uhrswork")
+
+data.knn <- data[var.knn]
+
+for (var in var.knn) {
+  data.knn[[var]] <- as.numeric(data[[var]])
+}
+
+
+set.seed(1)
+
+train <- sample(1:nrow(data.knn), nrow(data.knn)*0.75)
+test <- (-train)
+y <- data$binaryincome
+y.test <- y[test]
+
+```
+
+```{r}
+library(class)
+
+knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=1)
+table(knn.pred,y.test)
+```
+```{r}
+knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=3)
+table(knn.pred,y.test)
+```
+```{r}
+knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=5)
+table(knn.pred,y.test)
+```
+
+
+```{r}
+knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=7)
+table(knn.pred,y.test)
+```
+
 
 # Linear regression
 
@@ -519,25 +586,44 @@ Let's define the variables we will use in the regression.
 ```{r}
 data.reg <- data[c("year", "numprec", "region", "metro", "relate", "age", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "wkswork1", "uhrswork", "realincwage")]
 
+data.reg$year <- scale(data.reg$year)
+data.reg$numprec <- scale(data.reg$numprec)
+data.reg$age <- scale(data.reg$age)
+data.reg$wkswork1 <- scale(data.reg$wkswork1)
+data.reg$uhrswork <- scale(data.reg$uhrswork)
+
 set.seed(1)
 
-train <- sample(1:nrow(X), nrow(X)*0.75)
+train <- sample(1:nrow(data.reg), nrow(data.reg)*0.75)
 test <- (-train)
+y <- log(data.reg$realincwage)
 y.test <- y[test]
 ```
 
 
-We will build the linear regression to identify which factors influence income the most.
+We will build the linear regression to model the realincwage parameter.
 
 ```{r}
-reg.out <- lm(log(realincwage) ~ . -numprec, data = data.reg[train,], weights=numprec)
+reg.out <- lm(log(realincwage) ~ . , data = data.reg[train,])
 summary(reg.out)
 
 ```
+We can see from the summary, that the full Linear regression model explains 63.32% of variance associated with the response variable. Overall, while some dummy variables are not significant, we can conclude that the model is all predictors are significant as the p-value associated with the F-statistic is higly significant.
+
+The year variable has a positive coefficient, which means that on average, people earn more every year.
+The negative coefficient for all the significant *relate* levels shows that most people earn less that the head of their household, which was used as a base class. The large p-value for *relate1242* shows that there's no correlation between the earnings of the head of the household and foster children.
+
+```{r}
+par(mfrow=c(2,2))
+plot(reg.out)
+par(mfrow=c(1,1))
+```
+
+
 Calculating the MSE on the test set:
 ```{r}
 lm.pred <- predict(reg.out, newdata = data.reg[test, ])
-mean((lm.pred - y.test)^2)
+mean((lm.pred - y[test])^2)
 ```
 
 
@@ -546,10 +632,17 @@ plot(fitted.values(reg.out), residuals(reg.out), pch=20)
 abline(h=0, col="blue", lwd=2)
 ```
 
+```{r}
+library(car)
+
+vif(reg.out)
+```
+
+
 ## Forward selection
 ```{r}
 library(leaps)
-regfit.fwd <- regsubsets(log(realincwage) ~ . -industry-occupation-classwkr, data=data.reg, weights = data.reg$numprec, method="forward", nvmax=100)
+regfit.fwd <- regsubsets(log(realincwage) ~ . , data=data.reg, weights = data.reg$numprec, method="forward", nvmax=100)
 fwd.summary <-summary(regfit.fwd)
 plot(regfit.fwd, scale="bic")
 
@@ -610,27 +703,23 @@ coef(regfit.bwd,n.bwd)
 ```{r}
 library(glmnet)
 
-X <- model.matrix(realincwage ~ . -numprec, data = data.reg)
+X <- model.matrix(realincwage ~ . , data = data.reg)
 X <- X[,-1]
-y <- data.reg$realincwage
-#grid <- 10^seq(10, -2, length=100)
+y.test <- y[test]
+grid <- 10^seq(3, -4, length=100)
 
-ridge.mod <- glmnet(X, y, alpha=0, weights=data.reg$numprec)
+ridge.mod <- glmnet(X, y, alpha=0, standardize = TRUE)
 plot(ridge.mod, label=TRUE)
 
 ```
 ```{r}
-cv.out <- cv.glmnet(X[train, ], y[train], alpha = 0, nfold=10, weights=data.reg$numprec[train], type.measure = "mse")
+cv.out <- cv.glmnet(X[train, ], y[train], alpha = 0, nfold=10, type.measure = "mse")
 plot(cv.out)
 ```
 
 ```{r}
-i.bestlam <- which.min(cv.out$cvm)
-i.bestlam 
-bestlam <- cv.out$lambda[i.bestlam]
+bestlam <- cv.out$lambda.min
 bestlam
-cv.out$lambda.min
-cv.out$lambda.1se
 
 ```
 
@@ -645,9 +734,14 @@ mean((ridge.pred2 - y.test)^2)
 
 
 ```{r}
-out <- glmnet(X, y, alpha = 0, weights = data.reg$numprec)
+out <- glmnet(X, y, alpha = 0)
 predict(out, type = "coefficients", s = bestlam)
 ```
+```{r}
+coef(out)[,100]
+```
+
+
 ## Lasso Regression
 
 ```{r}
@@ -662,12 +756,19 @@ plot(cv.out)
 
 ```{r}
 bestlam <- cv.out$lambda.min
+bestlam
 lasso.pred <- predict(lasso.mod, s=bestlam, newx=X[test,])
 mean((lasso.pred-y.test)^2)
 ```
 
 ```{r}
-lasso.pred <- predict(lasso.mod, s=0, newx=X[test,])
+lasso.pred <- predict(lasso.mod, s=0.01, newx=X[test,])
 mean((lasso.pred-y.test)^2)
+```
+```{r}
+i <- 100
+lasso.mod$lambda[i]
+beta.L <- coef(lasso.mod)[,i]
+beta.L[beta.L == 0]
 ```
 
