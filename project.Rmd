@@ -273,6 +273,18 @@ barplot(table(data$marst))
 ```{r}
 barplot(table(data$nativity))
 ```
+```{r}
+summary(data$relate)
+```
+We can see that class 1242 with corresponds to foster children has only 18 observations. In fact, it's impossible to have foster children over 25 y.o. in the household, that's why these values are probably erroneous and we will delete them.
+
+```{r}
+data <- data[!(data$relate=="1242"),]
+data$relate <- droplevels(data$relate)
+summary(data$relate)
+
+```
+
 
 The class of workers variable is organised into 7 levels:(Self-empl=10, private sector=21, government=24, Federal govt employee=25, State govt employee=27, Local govt employee=28, Unpaid family worker=29). Since self-employed and unpaid family worker are only a small amount of units compared to all the rest we can combine them into a singular class: "Other". 
 
@@ -601,23 +613,35 @@ y.test <- y[test]
 ```
 
 
-We will build the linear regression to model the realincwage parameter.
+We will build the linear regression to model the *realincwage* parameter.
 
 ```{r}
-reg.out <- lm(log(realincwage) ~ . , data = data.reg[train,])
+reg.out <- lm(log(realincwage) ~ ., data = data.reg[train,])
 summary(reg.out)
 
 ```
-We can see from the summary, that the full Linear regression model explains 63.32% of variance associated with the response variable. Overall, while some dummy variables are not significant, we can conclude that the model is all predictors are significant as the p-value associated with the F-statistic is higly significant.
+We can see from the summary, that the full Linear regression model explains 63.32% of variance associated with the response variable. Overall, while some dummy variables are not significant, we can conclude that the model is all predictors are significant as the p-value associated with the F-statistic is highly significant.
 
 The year variable has a positive coefficient, which means that on average, people earn more every year.
-The negative coefficient for all the significant *relate* levels shows that most people earn less that the head of their household, which was used as a base class. The large p-value for *relate1242* shows that there's no correlation between the earnings of the head of the household and foster children.
+The p-value associated with region12 is larger than 0.05, which means that there's no significant difference between the average income in the aforementioned region and the base region.
+The negative coefficients for all the significant *relate* levels shows that most people earn less that the head of their household, which was used as a base class.
+The coefficient of the sex2 variable shows the same result obtained with anova analysis, there's a significant difference between the earnings of males and females with the later earning less than the former.
+Regarding race, white people tend to earn more than others with the Hispanic having lower earnings on average.
+Interestingly, married individuals with a present spouse tend to earn more on average than other people.
+The positive education coefficients indicate that each subsequent level of education achieved leads to increase in average earnings. We previously fitted the model with different categories for grades finished at school and these didn't have any significant differences with people who didn't attend school.
+Regarding occupation, architect was used as a base class and we can see that on average, only managers, healthcare workers, computer workers, lawyers and physician earn more than architects. On average, lawyers and physicians have the highest earnings, while people doing building related jobs have the lowest wage earning.
+Regarding industry, the  p-value associated with Hotels and Restaurants, Retain Trade, Social work, arts and other services is larger than 0.05 threshold, which means that there's no significant difference between the mentioned classes and the base class (agriculture).
+Public sector workers tend to earn more than private sector workers.
+
 
 ```{r}
 par(mfrow=c(2,2))
 plot(reg.out)
 par(mfrow=c(1,1))
 ```
+The residuals vs fitted values behave well and we don't see any systematic behaviors.
+The Q-Q plot shows that the observations don't follow the normal distribution and have fat tails. This could mean that the error terms follow the t-student distribution, however, according tot he CLT, with large number of samples it will behave similarly to the normal distribution.
+The scale location plot shows that there is some systematic behavior as the red line goes down a bit in the middle. 
 
 
 Calculating the MSE on the test set:
@@ -628,21 +652,16 @@ mean((lm.pred - y[test])^2)
 
 
 ```{r}
-plot(fitted.values(reg.out), residuals(reg.out), pch=20)
-abline(h=0, col="blue", lwd=2)
-```
-
-```{r}
 library(car)
 
 vif(reg.out)
 ```
-
+The variance inflation factor analysis shows that there's not problematic collinearity among the predictors. 
 
 ## Forward selection
 ```{r}
 library(leaps)
-regfit.fwd <- regsubsets(log(realincwage) ~ . , data=data.reg, weights = data.reg$numprec, method="forward", nvmax=100)
+regfit.fwd <- regsubsets(log(realincwage) ~ . , data=data.reg, method="forward", nvmax=100)
 fwd.summary <-summary(regfit.fwd)
 plot(regfit.fwd, scale="bic")
 
@@ -650,52 +669,52 @@ plot(regfit.fwd, scale="bic")
 
 
 ```{r}
+par(mfrow=c(1,3))
 plot(fwd.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
 n.fwd <- which.min(fwd.summary$bic)
 points(n.fwd,fwd.summary$bic[n.fwd],col="red",cex=2,pch=20)
-```
 
-```{r}
 plot(fwd.summary$adjr2,xlab="Number of Variables",ylab="Adj R2",type='l')
 n.fwd <- which.max(fwd.summary$adjr2)
 points(n.fwd,fwd.summary$adjr2[n.fwd],col="red",cex=2,pch=20)
-```
 
-
-```{r}
 plot(fwd.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
 n.fwd <- which.min(fwd.summary$cp)
 points(n.fwd,fwd.summary$cp[n.fwd],col="red",cex=2,pch=20)
+par(mfrow=c(1,1))
 ```
-
+We can see that using BIC, Adj R^2 and AIC as a selection parameter, the subset which includes almost all of the variables is the best. In fact, only some of dummy variables are excluded from the model, which is impossible to implement in practice. Thus, we will stic to the full model.
 
 ## Backward selection
 ```{r}
-regfit.bwd <- regsubsets(log(realincwage)~. -numprec, data=data.reg, weights=data.reg$numprec, method="backward", nvmax=100)
+regfit.bwd <- regsubsets(log(realincwage)~. -numprec, data=data.reg, method="backward", nvmax=100)
 bwd.summary <-summary(regfit.bwd)
 plot(regfit.fwd, scale="bic")
 
 ```
 ```{r}
+par(mfrow=c(1,3))
 plot(bwd.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
-n.bwd <- which.min(bwd.summary$bic)
-points(n.bwd,bwd.summary$bic[n.bwd],col="red",cex=2,pch=20)
-```
-```{r}
+n.bwd.bic <- which.min(bwd.summary$bic)
+points(n.bwd.bic,bwd.summary$bic[n.bwd.bic],col="red",cex=2,pch=20)
+
 plot(bwd.summary$adjr2,xlab="Number of Variables",ylab="Adj R2",type='l')
 n.bwd <- which.max(bwd.summary$adjr2)
 points(n.bwd,bwd.summary$adjr2[n.bwd],col="red",cex=2,pch=20)
-```
 
-```{r}
 plot(bwd.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
 n.bwd <- which.min(bwd.summary$cp)
 points(n.bwd,bwd.summary$cp[n.bwd],col="red",cex=2,pch=20)
+par(mfrow=c(1,1))
 ```
 
 
 ```{r}
-coef(regfit.bwd,n.bwd)
+n.bwd.bic
+coef(regfit.bwd,n.bwd.bic)
+```
+```{r}
+summary(regfit.bwd, 83)
 ```
 
 
@@ -703,7 +722,7 @@ coef(regfit.bwd,n.bwd)
 ```{r}
 library(glmnet)
 
-X <- model.matrix(realincwage ~ . , data = data.reg)
+X <- model.matrix(log(realincwage) ~ . , data = data.reg)
 X <- X[,-1]
 y.test <- y[test]
 grid <- 10^seq(3, -4, length=100)
@@ -766,9 +785,18 @@ lasso.pred <- predict(lasso.mod, s=0.01, newx=X[test,])
 mean((lasso.pred-y.test)^2)
 ```
 ```{r}
-i <- 100
+i <-50
 lasso.mod$lambda[i]
 beta.L <- coef(lasso.mod)[,i]
-beta.L[beta.L == 0]
+beta.L[beta.L != 0]
 ```
+We can see here that the best lambda 0.00012 doesn't eliminate any variables from that model. This proves our conclusions reached with the forward and backward elimination methods.
+By choosing 50th lambda, which is equal to 0.343, we can see that except for the intercept, 2 most important variables are *wkswork1* and *uhrswork*. Thus, we will fit a polynomial regression using these variables. 
 
+## Polynomial regression
+
+```{r}
+reg.out <- lm(log(realincwage) ~ . +I(uhrswork^2) + I(wkswork1^2), data = data.reg[train,])
+summary(reg.out)
+```
+We can see that adding 2 square terms increased the R-squared from 0.63 to 0.66. The negative coefficient for *uhrswork^2* and *wkswork1^2* indicates that at some point, there's no additional income caused by working more.
