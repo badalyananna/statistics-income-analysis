@@ -1,42 +1,65 @@
 ---
-title: "project"
-output: html_document
-author: "Anna Badalyan", "Rebecca Di Francesco"
+title: "Project"
+author: "Anna Badalyan, Rebecca Di Francesco"
 date: "07 06 2022"
-output: pdf_document, html_document
+output:
+     pdf_document:
+         latex_engine: xelatex
 ---
+
 ```{r}
 library(ggplot2)
+library(leaps)
 ```
+# Introduction
 
-Reading the dataset and encoding character variables as factors:
+The project is focused on finding the determinants of income for the population of US households in the period 1999-2013. The Current Population Survey dataset (Kaggle link), which contains labor force statistics in the US, was used. The dataset was pre-cleaned to contain only the observations for working adults aged 25 to 64.
+
+The first part is dedicated to data cleaning and wrangling. The second part covers exploratory data analysis, where we visualize the data and identify the relationships between the parameters and respective research questions. In particular, we noticed that time spent at work had a large influence on the income.
+Then, statistical techniques such as Linear Regression and Logistic regression and various model selection techniques were used to answer these research questions.
+
 
 ```{r}
 curPop <- read.csv("C:/Users/difra/Desktop/CurrentPopulationSurvey.csv/CurrentPopulationSurvey.csv")
-
 dim(curPop)
 
 ```
-###Cleaning data
+# Data wrangling
+## Data cleaning
 
 The dataset contains 344287 observations and 234 variables.
+The variables with prefix o_ are the original values provided by the US Census Bureau, while the respective variables without the prefix were cleaned by the providers of the dataset. In addition, the dataset providers generated additional variables based on the original ones. 
 
-Let's print the summary of the first 122 variables.
-```{r}
-summary(curPop[,1:122])
-
-```
-We can see that variables with a prefix o_  taken from the original Current Population survey, aren't cleaned, so we will use the version without the prefix. We can also notice that the variables gq, month, popstat, labforce, incbus, incfarm aren't informative as they contain the same value (their min, max and mean are the same), so we can drop them.
-Many variables are categorical, but R reads them as numbers. We will need to represent them as factors for further modeling. The list of these variables is the following:
-region, statefip, metro, metarea, relate, sex, race, marst, bpl, 
-citizen, mbpl, fbpl, nativity, hispan, sch, empstat, classwkr, classwly, occ, ind, occ1990, ind1990, occ1950, ind1950, occly, indly, occ50ly, ind50ly, wkswork2, wkswork1, union, srcearn, ftype
-
-Let's print the summary of the remaining columns:
+For convenience, we compare the original and cleaned variables 5 at a time.
 
 ```{r}
-summary(curPop[,123:ncol(curPop)])
+
+o_data <- curPop[,grep("o_", names(curPop), value=TRUE)] #dataframe of columns starting from "o_"
+columns_containing_NAs <- names(which(sapply(o_data, function(x) any(is.na(x)))))
+
+summary(curPop[, columns_containing_NAs][1:5])
+
+
+new_variables <- gsub("o_",  "\\1",columns_containing_NAs[1:5])
+summary(curPop[, new_variables])
+
 ```
-In the second part of the dataset, most of the variables were generated using the original 60 variables, however, it would be easier to take the occupation and industry variables using the already available dummy variables.
+
+We can see that cleaned variables have more null values as in the original dataset null values were encoded as 0. For example, the variable *o_county* identifies the county code which is a numerical code that cannot be zero and thus the variable *county* encoded all the zeros as NA's. Thus, we will use the clean version of the variables.
+
+However, this is not the case for the variable *o_yrimmig*.
+
+```{r}
+sum(curPop$o_yrimmig==0, na.rm=TRUE)/dim(curPop)[1]
+sum(curPop$o_yrimmig==0, na.rm=TRUE)
+```
+We can see, that the total number of observations where the year of immigration is encoded as 0 is 210671 or 61%. This most probably represents the people who didn't immigrate to the US.
+
+```{r}
+length(unique(curPop$occ))
+length(unique(curPop$ind))
+```
+The variables *occ* and *ind* contain 1259 and 699 unique values respectively. The models built using these variables will have to create 1259 and 699 dummy variables, which would be difficult to interpret. Thus, we will use the grouped occupation and industry related columns. They are already available as dummy variables and we will use them to reconstruct *industry* and *occupation*.
 
 ```{r}
 curPop$industry[curPop$Agriculture == 1] <- 'Agriculture'
@@ -79,47 +102,150 @@ curPop$occupation[curPop$constructextractinstall == 1] <- 'constructextractinsta
 curPop$occupation[curPop$production == 1] <- 'production'
 curPop$occupation[curPop$transport == 1] <- 'transport'
 
-print(unique(curPop$industry))
-print(unique(curPop$occupation))
+print("Levels for industry:")
+unique(curPop$industry)
+print("")
+print("Levels for occupation:")
+unique(curPop$occupation)
 
 ```
 We can see, then newly generated values don't contain any null values.
 
-As the year ranges from 1981 to 2013, we will need the inflation variable (*inflate*) and for convenience we will also use *realhrwage* variable.
+We can also notice that the variables gq, month, popstat, labforce, incbus, incfarm aren't informative as they contain the same value (their min, max and mean are the same), so we can drop them.
 
-We can see that we have several variables for income, which seem identical, *incwage*, *niincwage*, *incwageman*.
+```{r}
+summary(curPop[c("gq", "month", "popstat", "labforce", "incbus", "incfarm")])
+```
+We can see that there are several variables for income, which seem identical, *incwage*, *niincwage*, *incwageman*.
 Let's check if they are identical:
 ```{r}
-sum(data$incwage == data$niincwage) == sum(data$incwage == data$incwageman)
+sum(curPop$incwage == curPop$niincwage) == sum(curPop$incwage == curPop$incwageman)
 ```
-We verified, that the variables are identical, so we will only use the *incwage* column.
+We verified, that the variables are identical, so we will use the *incwage* column.
 
 
-Another column for wage is *tcincwage*. Let's plot the boxplots to compare it with the *incwage*.
-`
+In the dataset there are three variables starting with "tc" (i.e. topcoded) namely *tcoincwage*, *tcinclongj* and *tcincwage*. These variables were created to eliminate outliers from the corresponding original variables, i.e. *incwage*, *inclongj* and *incwageup*. We will not use the topcoded variables because the precious information could be lost and such outliers are peculiar to income distributions. Moreover, we will not use the variable *oincwage* as it corresponds to the earnings from other work including wage and salary, which is already present in *incwage*.
+
+The variable *inclongj* describes the earnings from the longest job, thus it cannot be included as a predictor as it would coincide with *incwage*. Therefore, *incwage* is our final choice of income variable that we want to predict.  We will not consider the column *hrwage* because it is the hourly wage that was calculated using *incwage* divided by the total hours worked. 
+
+```{r} 
+print("Summary of *oincwage*")
+summary(curPop$oincwage)
+print("Summary of *tcoincwage*")
+summary(curPop$tcoincwage)
+
+print("Summary of *incwage*")
+summary(curPop$incwage)
+print("Summary of *tincwage*")
+summary(curPop$tcincwage)
+
+print("Summary of *inclongj*")
+summary(curPop$inclongj)
+print("Summary of *tcinglongj")
+summary(curPop$tcinclongj)
+
+print("Percentage of entries of inclongj that are equal to incwage:")
+sum(curPop$incwage==curPop$inclongj, na.rm=TRUE)/dim(curPop)[1]
+```
+```{r} 
+par(mar=c(3.1, 4.7, 2.3, 2))
+boxplot(curPop$incwage, curPop$tcincwage, names = c("incwage", "tcincwage"),col=c( "sienna", "palevioletred1"),  ylab ="", main="")
+mtext(side=2, text="Income level ($)", line=3)
+mtext(side=3, text="Comparing the income variable *incwag* with its topcoded version *tcincwage*", line=0.5, cex = 1.2)
+
+```
+
+There is a variable srcearn, which is the source of earnings from the longest job and has two categories (1=wage and salary; 4=without pay). However, only 47 observations fall into the category 4 thus we can skip this feature as well.
+```{r}
+print("Summary of *srcearn*")
+summary(as.factor(curPop$srcearn))
+```
+There are variables starting with "q", which are data quality flags. 
+Let's consider the quality flags for the variables selected for analysis.
 
 ```{r}
-boxplot(data$incwage, data$tcincwage)
-```
-
-We can see that the values are similar for the income below 200 000, however, the *incwage* contains more extreme values. However, as *incwageman* column includes imputed values, we will stick to *incwage*.
-
-Thus, we chose the following columns:
-```{r}
-
-data <- curPop[c("year", "serial", "numprec", "hwtsupp", "region", "statefip", "metro", "metarea", "county", "pernum", "wtsupp", "relate", "age", "sex", "race", "marst", "bpl", "yrimmig", "citizen", "mbpl", "fbpl", "nativity", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "wkswork1", "hrswork", "uhrswork", "union", "incwage", "inclongj", "oincwage", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage", "hrwage", "inflate", "realhrwage")]
+sum(curPop$quhrswor>0, na.rm=TRUE)
+sum(curPop$qwkswork>0, na.rm=TRUE)
+sum(curPop$qincwage>0, na.rm=TRUE)
 
 ```
+There are some issues with the variables *uhrswor* and *wkswork*. However, the number of observations with issues is small compared to the total (344,287), so the columns were kept.
 
-To have the real income we need to multiply the inflation rate by the income values thus:
+Regarding the education related variables, there are *sch*, *educ99* and *schlcoll*. The first two variables indicate educational attainment but the variable *educ99* only recorded responses from the year '99 onwards, so *sch* is the complete version. While *schlcoll* can also be removed because it informs about school or college attendance for the year 2013 only. 
+
+We also do not consider the variabls *occly*, *indly* and *classwly* because they refer to previous year occupation, industry and class of worker and will be largely equal to the base year variables.
+
+Then there are some variables related to the place of birth both of the respondents (*bpl*) and their parents (*mbpl*, *fbpl*). The birthplaces contain 169 unique values, so *nativity*, which is a birthplace with only 5 unique values, is a better choice.
+
 ```{r}
-data$realincwage <- data$incwage*data$inflate
+print("Number of levels of *bpl*, birthplace:")
+length(unique(as.factor(curPop$bpl)))-1
+print("Number of levels of *o_nativity*:")
+length(unique(as.factor(curPop$o_nativity)))-1
+
+```
+There are also two variables that are closely related: *o_yrimmig* and *o_citizen*. The former is the year of immigration and the latter is the citizenship status. 
+
+```{r}
+summary(as.factor(curPop$o_yrimmig))
+summary(as.factor(curPop$o_citizen))
+```
+The variable *o_yrimmig* contains many zeros that are probably related to people that never immigrated to the US. So we decided to encode this variable differently:
+
+```{r}
+diff <- curPop$year- curPop$o_yrimmig
+
+diff[diff<=5] <- 1
+diff[diff>5&diff<=10] <-2
+diff[diff>10&diff<=20]<-3
+diff[diff>20&diff<1999]<-4
+diff[diff>=1999] <- 0
+curPop$immig_year <- as.factor(diff)
+summary(curPop$immig_year)
+
+
+print("0 = never immigrated,1=less than 5y ago, 2 = less than 10y & more than 5 year ago, 3 = less than 20y ago $ more than 10, 4 = immigrated more than 20yago")
+
+```
+```{r}
+data <- curPop[c("year", "numprec", "region", "statefip", "metro", "metarea", "county","relate", "age", "sex", "race", "marst", "immig_year", "o_citizen", "nativity", "sch", "empstat", "occupation","industry", "classwkr", "wkswork1", "hrswork", "uhrswork", "union","ftype", "inflate", "incwage")]
 ```
 
-Next we represent the necessary columns as factors.
+Finally, we consider the null values.
+```{r}
+colSums(is.na(data))
+```
+We can see that the columns *metarea* and *county* are missing 103939 and 235427 observations respectively, so they won't be used for further analysis. 
+```{r}
+data$metarea <- NULL
+data$county <- NULL
+```
+
+Columns *o_nativity*, *immig_year* and *o_citizen* interestingly contain around 87,000 NA's. Thus we check if these missing values are in the same rows, if so there may be another reason of the missing data which is not simply random. As we can see, all the NAs are in the same rows: 
 
 ```{r}
-col.list <- c("region", "statefip", "metro", "metarea", "county", "relate", "sex", "race", "marst", "bpl", "citizen", "mbpl", "fbpl", "sch","educ99", "schlcoll", "empstat", "occupation", "industry", "classwkr", "occly", "indly", "classwly", "union", "srcearn","ftype", "quhrswor", "qwkswork", "qinclong", "qincwage")
+sum(is.na(curPop$immig_year)==is.na(curPop$o_citizen))
+sum(is.na(curPop$immig_year)==is.na(curPop$o_nativity))
+sum(is.na(curPop$o_citizen)==is.na(curPop$o_nativity))
+```
+
+We discover that all the NAs are for the year 1990 and 1981. 
+```{r}
+unique(curPop[is.na(curPop$o_citizen),"year"])
+unique(curPop[is.na(curPop$immig_year),"year"])
+unique(curPop[is.na(curPop$o_nativity),"year"])
+
+```
+Given this new information, the  null values were removed.
+
+```{r}
+data <- na.omit(data)
+```
+
+Most of the variables in the dataset are categorical, but R reads them as numbers. We will need to represent them as factors for further modeling.
+
+```{r}
+col.list <-c("region", "statefip", "metro","relate", "sex", "race", "marst", "immig_year", "o_citizen", "nativity", "sch", "empstat", "occupation","industry", "classwkr", "union", "ftype")
 
 for (col in col.list) {
   data[[col]] <- as.factor(data[[col]])
@@ -127,48 +253,84 @@ for (col in col.list) {
 
 summary(data)
 ```
-We can notice now that the source of earnings column (*srcearn*) is not informative as it contains only 47 observations for class 4, while the rest 301861 belong to class 1, so we can omit it.
 
+After cleaning, the variable *empstat* has only the observation of the category "At work", thus we can remove this variable: 
 ```{r}
-data$srcearn <- NULL
-```
-
-
-Let's print the null values in each column.
-```{r}
-colSums(is.na(data))
-```
-We can see that columns *yrimmig*, *citizen* and *schlcoll* contain almost 300000  null values. Column *metarea* is missing almost third of the observations, while it just provides a precise code for a metropolitan area. Column *educ99* contains the same information as *sch*. Thus, thise columns can be removed.
-
-```{r}
-data$yrimmig <- NULL
-data$citizen <- NULL
-data$schlcoll <- NULL
-data$metarea <- NULL
-data$educ99 <- NULL
-data$county <- NULL
 data$empstat <- NULL
-
-colSums(is.na(data))
 ```
 
+##Recoding variables
+Let's plot the *sch* column for education.
 
-
-Now, we can omit the null values.
 ```{r}
-data <- na.omit(data)
-summary(data)
+summary(data$sch)
+```
+We can see that there are very few values for people that didn't finish school, so we can group them to 'nosc' class. We tried grouping the variables by the school levels (elementary, middle, high), but the linear regression analysis showed that there was no significant difference in income between those groups and people who didn't attend school at all. Thus, these levels were merged.
+
+```{r}
+levels(data$sch) <- c(levels(data$sch),"nosc", "fsch", "scol", "asoc", "bach", "advd")
+data$sch[data$sch == 0] <- 'nosc'
+data$sch[data$sch == 1] <- 'nosc'
+data$sch[data$sch == 2] <- 'nosc'
+data$sch[data$sch == 2.5] <- 'nosc'
+data$sch[data$sch == 3] <- 'nosc'
+data$sch[data$sch == 4] <- 'nosc'
+data$sch[data$sch == 5] <- 'nosc'
+data$sch[data$sch == 5.5] <- 'nosc'
+data$sch[data$sch == 6] <- 'nosc'
+data$sch[data$sch == 7] <- 'nosc'
+data$sch[data$sch == 7.5] <- 'nosc'
+data$sch[data$sch == 8] <- 'nosc'
+data$sch[data$sch == 9] <- 'nosc'
+data$sch[data$sch == 10] <- 'nosc'
+data$sch[data$sch == 11] <- 'nosc'
+data$sch[data$sch == 12] <- 'fsch'
+data$sch[data$sch == 13] <- 'scol'
+data$sch[data$sch == 14] <- 'asoc'
+data$sch[data$sch == 16] <- 'bach'
+data$sch[data$sch == 18] <- 'advd'
+data$sch <- droplevels(data$sch)
+summary(data$sch)
+```
+The class of workers variable is organised into 7 levels:(Self-empl=10, private sector=21, government=24, Federal govt employee=25, State govt employee=27, Local govt employee=28, Unpaid family worker=29). The majority of observation is in the category of private sector and then we have some observation for the category 25, 27, 28 that we grouped together into "Public sector". Since unpaid family worker are only a small amount of units compared to all the rest we can combine them inside "Private sector" category as well.
+
+```{r}
+summary(as.factor(data$classwkr))
 
 
+data$classwkr <- gsub('25', 'Public sector',data$classwkr)
+data$classwkr <- gsub('27', 'Public sector', data$classwkr)
+data$classwkr <- gsub('28', 'Public sector', data$classwkr)
+
+data$classwkr <- gsub('21', 'Private sector',data$classwkr)
+data$classwkr <- gsub('29', 'Private sector', data$classwkr)
+
+data$classwkr <- as.factor(data$classwkr)
+
+summary(data$classwkr)
+```
+The summary of *relate* variable shows that the class 1242 has 18 observations which correspond to foster child category. However, it is impossible that a person is a foster child at the age 25 or higher, which means that there was an error with this variable.
+```{r}
+summary(data$relate)
+```
+Thus, the observations with relate == 1242 were removed.
+```{r}
+data <- subset(data, subset=relate != 1242)
+data$relate <- droplevels(data$relate)
+summary(data$relate)
 ```
 
-###EDA
-
-Let's plot the distribution of the *realincwage*.
 
 
-We can see that the distribution is highly left skewed. Thus, we might need to use the log of income.
+#Exploratory Data Analysis
+Before visualizing the data, we need to calculate the real income by multiplying the inflation rate by *incwage*.
 
+
+```{r}
+data$realincwage <- data$incwage*data$inflate
+```
+
+We can see that the distribution of *realincwage* is highly left skewed. Thus, we will apply the log transform.
 
 ```{r}
 
@@ -189,6 +351,8 @@ qqnorm(data$realincwage)
 qqline(data$realincwage)
 
 data$logrealincwage <-log(data$realincwage)
+reduced <- data$logrealincwage>300
+
 # X-axis grid
 x2 <- seq(min(data$logrealincwage), max(data$logrealincwage), length = 40)
 
@@ -205,111 +369,7 @@ qqnorm(data$logrealincwage)
 qqline(data$logrealincwage)
 
 ```
-
-Let's plot the *sch* column for education.
-
-```{r}
-barplot(table(data$sch))
-```
-We can see that there are very few values for people that didn't finish school, so we can group them by elementary, middle and high.
-
-```{r}
-levels(data$sch) <- c(levels(data$sch),"nosc", "elem", "midl", "high", "fsch", "scol", "asoc", "bach", "advd")
-data$sch[data$sch == 0] <- 'nosc'
-data$sch[data$sch == 1] <- 'elem'
-data$sch[data$sch == 2] <- 'elem'
-data$sch[data$sch == 2.5] <- 'elem'
-data$sch[data$sch == 3] <- 'elem'
-data$sch[data$sch == 4] <- 'elem'
-data$sch[data$sch == 5] <- 'elem'
-data$sch[data$sch == 5.5] <- 'midl'
-data$sch[data$sch == 6] <- 'midl'
-data$sch[data$sch == 7] <- 'midl'
-data$sch[data$sch == 7.5] <- 'midl'
-data$sch[data$sch == 8] <- 'midl'
-data$sch[data$sch == 9] <- 'high'
-data$sch[data$sch == 10] <- 'high'
-data$sch[data$sch == 11] <- 'high'
-data$sch[data$sch == 12] <- 'fsch'
-data$sch[data$sch == 13] <- 'scol'
-data$sch[data$sch == 14] <- 'asoc'
-data$sch[data$sch == 16] <- 'bach'
-data$sch[data$sch == 18] <- 'advd'
-data$sch <- droplevels(data$sch)
-barplot(table(data$sch))
-```
-
-Let's have a look at region variable. 
-```{r}
-barplot(table(data$region))
-```
-The regions are equally distributed among the given variables.
-
-```{r}
-barplot(table(data$statefip))
-unique(data$statefip)
-```
-
-```{r}
-barplot(table(data$metro))
-```
-```{r}
-barplot(table(data$relate))
-```
-```{r}
-hist(data$age)
-```
-```{r}
-barplot(table(data$sex))
-```
-Both genders are equally represented in the dataset.
-
-```{r}
-barplot(table(data$race))
-```
-```{r}
-barplot(table(data$marst))
-```
-```{r}
-barplot(table(data$nativity))
-```
-
-Let's plot the correlation matrix of the meaningful variables in our dataset.
-
-```{r}
-data.cat <- data[c("region", "statefip", "metro", "relate", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "ftype")]
-
-chisq.matrix <- function(x) {
-  names <- colnames(x);
-  ndim <- length(names)
-  pvals <- matrix(nrow=ndim, ncol=ndim, dimnames = list(names, names))
-  stats <- matrix(nrow=ndim, ncol=ndim, dimnames = list(names, names))
-  for (i in 1:ndim) {
-    for (j in i:ndim) {
-      test <- chisq.test(x[,i],x[,j], simulate.p.value = TRUE)
-      pvals[i,j] = test$p.value
-      pvals[j,i] = pvals[i,j]
-      stats[i,j] = test$statistic
-      stats[j,i] = stats[i,j]
-    }
-  }
-  
-  return (list("p.values"=pvals, "statistics"=stats))
-}
-
-mat <- chisq.matrix(data.cat)
-#heatmap(mat$p.values)
-heatmap(mat$statistics)
-```
-We can see theat *region* is correlated with *statefip*, *relate* with *ftype* and *race* with *hispan*. So we will use only 1 of the variables in e ach pair: *region*, *relate* and *race*.
-
-
-
-```{r}
-counts <- table(data$realincwage, data$sch)
-counts
-```
-
+Let's also create a binary income variable with 60,000 dollars as threshold, this variable will be used in order to perform a logistic regression. 
 ```{r}
 
 data$binaryincome <- as.factor(ifelse(data$realincwage >=60000, 1, 0))
@@ -317,11 +377,32 @@ summary(data$binaryincome)
 
 ```
 
-### Data Visualization
-In the density histogram below we can see the different distributions of income (using *binaryincome*) across different age categories. At the left, we can see that the distribution of high income (over 60k) for different ages is distributed almost like a normal distribution. While the low-middle income distribution has a descending shape. 
+Let's have a look at region, statefip and metro variables. 
+```{r}
+par(mfrow = c(2, 2))
+barplot(table(data$region))
+barplot(table(data$statefip))
+barplot(table(data$metro))
+barplot(table(data$relate))
+```
+
+
+```{r}
+par(mfrow = c(2, 2))
+barplot(table(data$sex))
+barplot(table(data$race))
+barplot(table(data$marst))
+barplot(table(data$nativity))
+```
+
+```{r}
+hist(data$age)
+```
+In the density histogram below we can see the different distributions of income (using *binaryincome*) across different age categories. On the left, we can see that the high income (over 60k) for different ages is distributed almost like a normal distribution. While the low-middle income distribution has a descending shape. 
 
 ```{r}
 par(mfrow=c(1,2))
+data$binaryincome <- as.factor(ifelse(data$realincwage >=60000, 1, 0))
 
 # X-axis grid
 x2 <- seq(min(data$age[data$binaryincome==1]), max(data$age[data$binaryincome==1]), length = 40)
@@ -345,7 +426,6 @@ hist(data$age[data$binaryincome==0], prob = TRUE, col = "#0000FF",
 
 lines(density(data$age[data$binaryincome==0]), col="red", lwd=2)
 ```
-
 Now, let's check if the age variable grouped by sex is balanced. We want to avoid imbalance because as we noticed above young people tend to have lower income as opposite of older people. Thus if we had more younger males than younger females or viceversa this would bias our analysis. Luckily, it seems that we have a balanced number of males and females for each year of age.
 
 ```{r}
@@ -353,11 +433,7 @@ Now, let's check if the age variable grouped by sex is balanced. We want to avoi
 ggplot(data, aes(fill=sex, y=age, x=age)) + 
     geom_bar(position="fill", stat="identity")
 ```
-
-
-###ANOVA
-
-Let's compare the median income for males and females to see if there is a difference. We want to use the median and not the mean because outlier data can skew the average. As we see, the median income is around 10,000 dollars higher for males. 
+Let's compare the median and mean income for males and females to see if there is a difference. In this case the median is more meaningful to compare because outlier data can skew the average. As we see, the median income is around 10,000 dollars higher for males, while when considering the mean, the difference in income between the two group is even larger than 10,000 dollars. In the next section, we run a one-way ANOVA to test if this difference is statistically significant.
 
 ```{r}
 
@@ -372,54 +448,12 @@ group_mean$Sex <- NULL
 cbind(group_median, group_mean)
 ```
 
-So when considering the mean, the difference in income between the two group is even larger than 10,000 dollars. 
-We could perform a one-way ANOVA test to check if there is a statistically significant difference between the mean income for males and females (H1). In this case the continuous income variable *realincwage* is the dependent variable and *sex* is the independent variable. 
-The assumption of sample independence can be considered true. It remains to check the normality of residuals and the variance equality assumption.
-
--Check that variance in the groups is equal
-
-Let's see if variance equality can be perceived visually trough a boxplot. 
-The interquartile range for males is larger than the one for females so the variance is slightly higher for the males group. 
-
 ```{r}
-par(mfrow = c(2,1))
+par(mfrow = c(1,2))
 qplot(as.factor(sex), data$realincwage, geom = "boxplot", data = data, na.rm=TRUE, fill=as.factor(sex))+coord_cartesian(ylim = c(10000, 70000))+labs(title = "Mean income by sex", x ="Sex", y="Income level")+ scale_fill_discrete(name = "Sex", labels = c("Males", "Females"))
 
 qplot(as.factor(sex), data$realincwage, geom = "boxplot", data = data, na.rm=TRUE, fill=as.factor(sex))+coord_cartesian(ylim = c(7000, 1000000))+labs(title = "Mean income by sex", x ="Sex", y="Income level")+ scale_fill_discrete(name = "Sex", labels = c("Males", "Females"))
 ```
-We can run a Bartlett’s Test to determine whether or not the income variances between males and females are different. Considering a 0.05 significance level, the p-value of the test is a number way smaller than that so we have evidence to say that the samples do not all have equal variances. 
-
-```{r}
-bartlett.test(data$realincwage ~ data$sex)
-```
-In general, ANOVA’s are considered to be fairly robust against violations of the equal variances assumption as long as each group has the same sample size, which is the case: 
-
-```{r}
-summary(as.factor(data$sex))
-```
-
-```{r}
-res.aov <- aov(log(data$realincwage) ~ data$sex, data = data)
-# Summary of the analysis
-summary(res.aov)
-```
-
-
-As the p-value is less than the significance level 0.05, we can conclude that there are significant differences for what concerns average income between the two males and females groups. Still, running an ANOVA test with the assumption of equality of variances that is violated can cause more frequent type I error. Thus let's try with Welch's ANOVA. For normal, different-variance, and balanced data (i.e. same-size samples), Welch’s has the most power and the lowest type I error rate. By looking at the result of this test we can draw the same conclusion as for the ANOVA test. 
-
-```{r}
-oneway.test(log(data$realincwage) ~ data$sex, data = data, var.equal = FALSE)
-```
-
-- Check that residuals are normally distributed
-Clearly from the Q-Q plot below the residuals are not normally distributed however the one-way is considered a robust test against the normality assumption.
-
-```{r}
-qqnorm(res.aov$residuals)
-qqline(res.aov$residuals)
-```
-
-
 
 ```{r}
 group_mean = aggregate(data$realincwage, list(data$sex, data$race), FUN=mean) 
@@ -448,133 +482,612 @@ CombinedPlot=ggplot(data, aes(x=as.factor(data$race), y=data$realincwage, fill=a
 CombinedPlot
 ```
 
-###
-The class of workers variable is organised into 7 levels:(Self-empl=10, private sector=21, government=24, Federal govt employee=25, State govt employee=27, Local govt employee=28, Unpaid family worker=29). Since self-employed and unpaid family worker are only a small amount of units compared to all the rest we can combine them into a singular class: "Other". 
-
 ```{r}
-summary(as.factor(data$classwkr))
-data$classwkr <- gsub('10', 'Other', data$classwkr)
-data$classwkr <- gsub('29', 'Other', data$classwkr)
+CombinedPlot=ggplot(data, aes(x=as.factor(data$sch), y=data$realincwage, fill=as.factor(data$sex)))+  geom_boxplot()+coord_cartesian(ylim = c(9000, 150000))+scale_fill_discrete(name = "Sex", labels = c("Male", "Female"))+ labs(title  = "Boxplot of income grouped by sex and education", x ="Education", y="Income level ($)")+scale_x_discrete(labels=c("nosc" = "No school", "fsch" = "12 years of school", "scol" = "Some college", "asoc"="Associate degree", "bach" = "Bachelor's degree", "advd" = "Advanced degree")) + theme(axis.text.x = element_text(angle = 25, vjust = 0.5, hjust=1))
 
-data$classwkr <- gsub('24', 'Public sector',data$classwkr)
-data$classwkr <- gsub('25', 'Public sector',data$classwkr)
-data$classwkr <- gsub('27', 'Public sector', data$classwkr)
-data$classwkr <- gsub('28', 'Public sector', data$classwkr)
+CombinedPlot
+```
+```{r}
+ggplot(data=data, aes(occupation)) + geom_bar(aes(fill = binaryincome)) + theme(axis.text.x = element_text(angle = 25, vjust = 0.5, hjust=1))
+```
+```{r}
+library(forcats)
+p <- ggplot(data, aes(x =  fct_reorder(occupation, realincwage, .desc = FALSE), fill = sex)) +
+  geom_bar(position = "fill")
+q <- p +
+  labs(title = "Occupation ordered by highest income level") +
+  xlab(NULL)
+r <- q +
+  scale_fill_discrete(name = "Gender") +
+  coord_flip()
+r
 
-data$classwkr <- gsub('21', 'Private sector',data$classwkr)
 
 ```
 
+#Statistical analysis
+##Chi-Square Test
+We will use the Chi-Square Test to perform a correlation analysis between categorical variables.
 
 ```{r}
-data$classwkr <- as.factor(data$classwkr)
+data.cat <- data[c("region", "statefip", "metro", "relate", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "ftype", "immig_year", "o_citizen")]
 
-summary(data$classwkr)
+chisq.matrix <- function(x) {
+  names <- colnames(x);
+  ndim <- length(names)
+  pvals <- matrix(nrow=ndim, ncol=ndim, dimnames = list(names, names))
+  stats <- matrix(nrow=ndim, ncol=ndim, dimnames = list(names, names))
+  for (i in 1:ndim) {
+    for (j in i:ndim) {
+      test <- chisq.test(x[,i],x[,j], simulate.p.value = TRUE)
+      pvals[i,j] = test$p.value
+      pvals[j,i] = pvals[i,j]
+      stats[i,j] = test$statistic
+      stats[j,i] = stats[i,j]
+    }
+  }
+  
+  return (list("p.values"=pvals, "statistics"=stats))
+}
 
+mat <- chisq.matrix(data.cat)
+#mat$p.values
+heatmap(mat$statistics)
+```
+As the p-value for all pairs of variables is 0.0005, there is a correlation between all of the variables. The value of test statistics shows that the correlation is particularly high for the following pairs: *region* and*statefip*, *relate* and *ftype*, *classwrk* and *industry*. Thus, we use only 1 of the variables in the first pairs: *region* and *relate*. While for classwrk and industry??
+Interestingly, *occupation* variable is also quite correlated with *sex* but we want to keep them both since these two variables store different informations.
+Then, *o_citizen* is correlated with both *nativity* and *immig_year*. Moreover, for the variable *o_citizen* we are not sure about the meaning of the labels, there are various zeros that in the new variable *citizen* were signalled as NA's. Similarly, for *immig_year* we do not know the true meaning of the many zeros that were encoded but we suppposed these were for people that did not immigrated. Since the data may be misleading and gien the high correlations between the three variables we will keep only *nativity*. 
+```{r}
+summary(as.factor(curPop$o_citizen))
+```
+
+
+
+##ANOVA
+
+Let now see if there is a statistically significant difference between the mean income for males and females (H1). In this case the continuous income variable *realincwage* is the dependent variable and *sex* is the independent variable. The assumption of sample independence can be considered true. It remains to check the normality of residuals and the variance equality assumption.
+
+From the boxplot of before we could already saw visually that the variance was slightly higher for the males group given that the the interquartile range for males was larger than the one for females.
+
+To test this, we run a Bartlett’s Test to determine whether or not the income variances between males and females are different. The p-value is smaller than that 0.05 significance level, so we have evidence that the samples do not have equal variances. 
+
+```{r}
+bartlett.test(data$realincwage ~ data$sex)
+```
+In general, ANOVA’s are considered to be fairly robust against violations of the equal variances assumption as long as each group has the same sample size, which is the case: 
+
+```{r}
+summary(as.factor(data$sex))
 ```
 
 ```{r}
-# calculate the percentages
-summary(data$realincwage[data$classwkr=="Private sector"])
+res.aov <- aov(log(data$realincwage) ~ data$sex, data = data)
+# Summary of the analysis
+summary(res.aov)
 ```
 
-
+As the p-value is less than the significance level 0.05, we can conclude that there are significant differences in average income between the males and females. Still, running the ANOVA test with the assumption of equality of variances that is violated can cause more frequent type I error. Thus let's try with Welch's ANOVA. For normal, different-variance, and balanced data (i.e. same-size samples), Welch’s has the most power and the lowest type I error rate. By looking at the result of this test we can draw the same conclusion as with the ANOVA test. 
 
 ```{r}
-# plotting graph
-ggplot(data, aes(fill = data$sex,
-                      y = data$realincwage, x = data$classwkr))+
-geom_bar(position = "stack", stat = "identity")+coord_cartesian(ylim = c(5000, 1300999))
-ggtitle("Weather Data of 4 Cities !")+
-theme(plot.title = element_text(hjust = 0.5))
+oneway.test(log(data$realincwage) ~ data$sex, data = data, var.equal = FALSE)
+```
+Clearly from the Q-Q plot below the residuals are not normally distributed however the one-way is considered a robust test against the normality assumption.
+
+```{r}
+qqnorm(res.aov$residuals)
+qqline(res.aov$residuals)
 ```
 
+
+
+
+##Classification
 ###Logistic Regression
+Let now try to predict whether the income will be higher than 60,000 dollars given some selected covariates. In order to perform this classification, linear regression cannot be applied because its predictions would range between -infinite and + infinite possibly but we are interested in the probability of “success” (i.e., either income is higher than 60k or not) which has to be in the range 0-1. For this task, thus given the Bernoulli distribution of the response variable it is necessary to apply a non-linear function that is the Logistic regression. 
+
 
 ```{r}
-###LOGISTIC REGRES
-data.logistic <- data[, -c(1,4)-6-c(8,10)-c(15,18)-c(23,25)-27-c(30,42)]
-size<- round(.8 * dim(data)[1])  # training set size
-training_set <- data[1:size,]
-testing_set <- data[-(1:size),]
+
+data.log <- data[c("year","numprec","region", "metro", "age","sex", "race","marst","nativity","sch", "occupation","industry", "classwkr" ,"wkswork1" ,"uhrswork","union", "relate", "binaryincome")]
+
+data.log$year <- scale(data.log$year)
+data.log$numprec <- scale(data.log$numprec)
+data.log$age <- scale(data.log$age)
+data.log$wkswork1 <- scale(data.log$wkswork1)
+data.log$uhrswork <- scale(data.log$uhrswork)
+
+
+set.seed(1)
+
+train <- sample(1:nrow(data.log), nrow(data.log)*0.75)
+test <- (-train)
+
+y.train <- data[train, "binaryincome"]
+y.test <- data$binaryincome[test]
+
+data.log.train <-data.log[train, ]
+data.log.test <- data.log[test,]
 
 ```
-summary(training_set)
+
+We will first run a model with all the possible predictors. 
+Then for every variable we have the estimated coefficients and their estimated st.errors. Considering that maximum likelihood estimates are asymptotically normally distributed and asymptotically unbiased, z-scores can be computed by dividing the coefficient with the estimated std.error. Then the associated P-values under 0.05 indicate that the predictors have a statistically significant relationship with the response variable in the model. In this model, we have that all predictors are highly significant except for *class_wkr*, which indicate whether a person works in the public sector or private sector. However since *class_wkr* was highly correlated with *industry*, its effect may be cancelled by *industry*. Then some levels of categorical variables are also not significant however these have to be interpreted together. R automatically created for every categorical variable n-1 dummy variables. So, for categorical variables we cannot decide to drop only levels that are non significant because their interpretation is dependent upon the other levels. Also, a small p-value alone it is not so indicative, it is also important to have large effect sizes in the estimated coefficient. This is the case for the coefficient corresponding to the dummy variable of advanced degree *schadvd* extracted from the categorical variable *sch*.  This tell us that having an advanced degree when compared to not having finished school changes the log odds of income greater than 60k by a multiplicative factor of exp(2.98), keeping all other predictors fixed. The interpretation of continuous variable coefficients is slightly different, let consider as an example *uhrswork* that is the usual number of hours worked in a week. The estimated coefficient of 0.65 means that for every unit change in *uhrswork*, so for every extra hour worked, the log odds of income higher than 60k increase of a multiplicative factor of exp(0.65) given that all the other predictors are fixed. 
+Generally, we can say that negative coefficients lead to a decrease in the probability of income higher than 60k since the odds are multiplied by a number smaller than one while if coefficients are positive, an increase of the x variable associated to the coefficient will lead to an increase in probability of income greater than 60k.
+Below the table of coefficients there is the null and residual deviance. 
+Then we have AIC, the Akaike Information Criterion which in this context is just the Residual deviance adjusted for the number of parameters in the model. AIC can be used to compare models, lower AIC scores are better. Then, the number of Fisher Scoring iterations, 9 in this case, is an indicator of how quickly the glm() function converged on the maximum likelihood estimates for the coefficients. 
+
+By examining the coefficients, we can confirm some expected results. Being a woman decrease the log(odds) of income than being a man and being white tend to increase them with respect to other races. Regarding education, the highest the education level and the greater the log(odds) when compared to people that did not finish school. The base level for occupation is architect and since architect had one of the highest median income between occupation, we can see that also here most coefficient are negative when compared with architect occupation. The largest effect is for health support workers which is an occupation that would decrease the log(odds) of high income by a multiplicative facor of exp(2.70), also for farmers and people working in the building industry the coefficient are negative and large. For the number of hours worked in a week and the number of weeks worked in a year the coefficient are respectively 0.58 and 0.65 thus as expected working more hours increase the log(odds) of greater income even if the effect size seems mild. The variable *relate* indicate the relationship to household head and in this case the base level is the household head, the coefficient are all negative and thus not being the household head decrease log(odds) of income. More interestingly, all people in the following categories: married but spouse absent, separated, divorced, widowed or never married also decrease the log(odds) of income when compared to people married with spouse present. Then, the age counts but its effect is smaller than for the number of hours worked or number of weeks worked, probably also because this dataset only contain information for people older than 25 years old.
+
+
 ```{r}
-m1 <- glm(training_set$binaryincome ~ training_set$year+training_set$region+training_set$statefip, data = training_set, family = binomial('logit'))
-summary(m1)
+logm1 <- glm(binaryincome ~ . , data = data.log.train, family = binomial)
+summary(logm1)
 ```
+
+
+Let's try now to fit a second model without considering the variable *classwkr* that had non significant coefficient.
+By removing this covariate, all the variables have significant coefficient thus the data support the fact that all the regressors included now are relevant for having income greater than 60,000 dollars.  
+```{r}
+logm2 <- glm(binaryincome ~.-classwkr , data = data.log.train, family = binomial)
+summary(logm2)
+
+```
+
+The AIC is slightly lower, from  132215.2 to 132213.5, indicating as better the second model. This is because it requires less number of predictors but reaches almost the same level of precision. 
 
 ```{r}
-sum(is.na(training_set$statefip))
+
+logm1$aic
+logm2$aic
+
+```
+
+Since the second model is a reduced version of the full model, we can compare these nested model with the anova function:
+```{r}
+anova(logm1, logm2, test="Chisq")
+```
+This p-value is the same of the p-value obtained in the full model for the *classwkr* variable because the sample size is very large. However we checked the result of ANOVA function because it is a more reliable approximation. The null hypothesis of this test is that the coefficient of *classwkr* is zero and given the large p-value it is not possible to reject this hypothesis. In fact, we also noticed that the coefficients of *industry* that is the variable that has the highest correlation with *classwkr* remains unchanged after removing this variable. 
+
+Let's now plot the residuals of the full model:
+```{r}
+par(mfrow=c(2,2))
+plot(logm1)
 ```
 
 
+Let's have a look at the confusion matrix of the first model with all possible predictors:
 `
+```{r}
+logistic.prob <- predict(logm1, type="response") #link is for logit, response for prob
+logistic.pred.train <- rep(0, dim(data.log.train)[1])
+logistic.pred.train[logistic.prob>0.5] <- 1
+table(logistic.pred.train, y.train)
+```
 
-# Linear regression
+Let's have a look at the confusion matrix with the second reduced model:
+```{r}
+logistic.prob2 <- predict(logm2,  type="response") #link is for logit, response for prob
+logistic.pred.train2 <- rep(0, dim(data.log.train)[1])
+logistic.pred.train2[logistic.prob2>0.5] <- 1
+table(logistic.pred.train2, y.train)
+```
+As we can see from these two table, the second model without the variable *classwkr* produce even more correct classifications. However the difference is barely noticeable: the training error rate is for both 16%. For both models, 2/3 of these misclassifications is linked to observations that were classified as high income and the model wrongly predicted them as lower than 60,000 dollars. Given the imbalanced dataset, that contain more data for income lower than 60k, this type of behavior in favor of false negative classifications was expected. However of course these predictions are quite  optimistic, because we are making predictions of the response variable on same data used to train the model and because of the data imbalance this type of metric may be misleading. In fact a trivial classifier that always predict zero as response variable would have a training error of 24% which is also would generally considered a not too large error rate. 
 
+```{r}
+# overall (training) error rate
+(20072+10028)/dim(data.log.train)[1]
+(20066+10024)/dim(data.log.train)[1]
+```
+
+In our case, our purpose is simply to build a reliable classifier that predict whether the income is higher than 60,000. In some other problems given the nature of the classification either minimizing the number of false positive or minimizing the number of false positive could be preferred. In this statistical analysis, we want to have a balanced number of false positives and false negatives. 
+```{r}
+print("False negative rate for full and reduced model:")
+20072/(20072+25772)
+20066/(20066+25778)
+```
+
+
+Let imagine a use case for a classifier that predicts high income, perhaps it could be used by banks or investment funds to identify potential wealthy customers. With a false negative rate of almost 43% for both models, this classifier is not anymore reliable for the purpose of this task. A solution to this problem is to change the threshold, i.e. changing the classification rule that was previously 0.5 to a lower threshold of 0.3. By printing the error rates for the first model we see that now the False negative rate decreased while the general training error increased slightly. Clearly 0.5 is the best threshold to minimize the overall training error rate.
+
+```{r}
+logistic.prob1 <- predict(logm1,  type="response") #link is for logit, response for prob
+logistic.pred.train1 <- rep(0, dim(data.log.train)[1])
+logistic.pred.train1[logistic.prob1>0.3] <- 1
+table(logistic.pred.train1, y.train)
+
+print("FNR:")
+10970/(10970+34874)
+print("Overall training error rate:")
+(10970+ 23432)/dim(data.log.train)[1]
+
+
+logistic.prob2 <- predict(logm2,  type="response") #link is for logit, response for prob
+logistic.pred.train2 <- rep(0, dim(data.log.train)[1])
+logistic.pred.train2[logistic.prob2>0.3] <- 1
+table(logistic.pred.train2, y.train)
+print("FNR:")
+10974/(10974+34870)
+print("Overall training error rate:")
+(10974+ 23429)/dim(data.log.train)[1]
+
+```
+Since a model with less predictors and the same predictive power should be preferred in order to reduce variability, we are going to continue the analysis on the model without *classwkr*.
+
+Let's look at the ROC curve which shows the general behavior of a classifier without the need of specifying a threshold. The area under the curve is 88%, definitively better than a random classifier.
+```{r}
+library(pROC)
+roc.out <- roc(y.train, logistic.prob2, levels=c('0', '1'))
+plot(roc.out, print.auc=TRUE, legacy.axes=TRUE, xlab="False positive rate", ylab="True positive rate")
+
+```
+
+```{r}
+coords(roc.out, "best")
+```
+By using a threshold that maximizes the sum of specificity and sensitivity we can reach more balance between TPR and FNR:
+```{r}
+logistic.prob2 <- predict(logm2,  type="response") #link is for logit, response for prob
+logistic.pred.train2 <- rep(0, dim(data.log.train)[1])
+logistic.pred.train2[logistic.prob1>0.2370178	] <- 1
+table(logistic.pred.train2, y.train)
+tp = 37707
+tn = 108872
+fp = 30747
+fn = 8137
+print("FPR")
+fp/(fp+tn) #FP/FP+TN
+
+print("FNR")
+ fn/(fn+tp) #FN/FN+TP
+```
+However the ROC curve is also biased in this case because it considers specificity that is always going to be high in this case given the imbalanced dataset towards the 0 class. A better metrics for imbalanced data is F-Measure which is the harmonic mean of precision and recall.
+
+```{r}
+prec = tp/(tp+fp)
+recall = tp/(tp+fn)
+f1 = 2*(prec*recall)/(prec+recall)
+f1
+```
+
+# selecting a subset of the variables 
+
+Now, let's check the predictions on the hold-out set:
+```{r}
+logistic.prob2 <- predict(logm2, data.log.test, type="response")
+logistic.pred.test2 <- rep(0, dim(data.log.test)[1])
+logistic.pred.test2[logistic.prob2>0.2370178] <- 1
+table(logistic.pred.test2, y.test)
+```
+
+The F1 score is basically the same on the test set, which is a good sign since it means there is not overfitting.
+
+
+```{r}
+tp =12487
+fp = 10336
+tn = 36295
+fn = 2703
+prec = tp/(tp+fp)
+recall = tp/(tp+fn)
+f1 = 2*(prec*recall)/(prec+recall)
+f1
+```
+
+### Linear discriminant analysis
+```{r}
+library(MASS)
+lda.fit <- lda(binaryincome ~ ., data = data.log, subset=train)
+lda.fit
+
+```
+```{r}
+plot(lda.fit)
+```
+```{r}
+lda.pred <- predict(lda.fit, data.log[test,])
+names(lda.pred)
+```
+```{r}
+lda.class <- lda.pred$class
+table(lda.class,y.test)
+```
+```{r}
+mean(lda.class!=y.test)
+```
+```{r}
+mean(lda.class==y.test)
+```
+```{r}
+pred <- rep("0", length(lda.pred$posterior[,1]))
+pred[lda.pred$posterior[,1] < 0.22] = "1"
+
+table(pred, y.test)
+```
+```{r}
+mean(pred==y.test)
+```
+
+### Quadratic discriminant analysis
+```{r}
+library(MASS)
+qda.fit <- qda(binaryincome ~ ., data = data.log, subset=train)
+qda.fit
+```
+```{r}
+qda.pred <- predict(qda.fit, data[test,])
+qda.class <- qda.pred$class
+table(qda.class,  y.test)
+```
+```{r}
+mean(qda.class!=y.test)
+```
+```{r}
+qda.pred$posterior[1:20,1]
+qda.class[1:20]
+```
+
+
+### KNN
+As the KNN algorithm uses numeric methods, we need to make sure all the variables are numeric.
+
+```{r}
+var.knn <- c("year", "numprec", "region", "metro", "relate", "age", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "wkswork1", "uhrswork")
+
+data.knn <- data[var.knn]
+
+for (var in var.knn) {
+  data.knn[[var]] <- as.numeric(data[[var]])
+}
+
+
+set.seed(1)
+
+train <- sample(1:nrow(data.knn), nrow(data.knn)*0.75)
+test <- (-train)
+y <- data$binaryincome
+y.test <- y[test]
+
+```
+
+```{r}
+library(class)
+
+#knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=1)
+#table(knn.pred,y.test)
+#mean(knn.pred==y.test)
+```
+```{r}
+#knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=3)
+#table(knn.pred,y.test)
+#mean(knn.pred==y.test)
+```
+```{r}
+#knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=5)
+#table(knn.pred,y.test)
+#mean(knn.pred==y.test)
+```
+
+
+```{r}
+#knn.pred <- knn(data.knn[train,], data.knn[test,], y[train], k=7)
+#table(knn.pred,y.test)
+```
+
+
+## Regression
+###Linear Regression
 Let's define the variables we will use in the regression.
 
 ```{r}
-data.reg <- data[c("year", "numprec", "region", "metro", "relate", "age", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "uhrswork", "realincwage")]
+data.reg <- data[c("year", "numprec", "region", "metro", "relate", "age", "sex", "race", "marst", "nativity", "sch", "occupation", "industry", "classwkr", "union", "wkswork1", "uhrswork", "realincwage")]
 
-attach(data.reg)
+data.reg$year <- scale(data.reg$year)
+data.reg$numprec <- scale(data.reg$numprec)
+data.reg$age <- scale(data.reg$age)
+data.reg$wkswork1 <- scale(data.reg$wkswork1)
+data.reg$uhrswork <- scale(data.reg$uhrswork)
+
+set.seed(1)
+
+train <- sample(1:nrow(data.reg), nrow(data.reg)*0.75)
+test <- (-train)
+y <- log(data.reg$realincwage)
+y.test <- y[test]
 ```
 
 
-We will build the linear regression to identify which factors influence income the most.
+We will build the linear regression to model the *realincwage* parameter.
 
 ```{r}
-reg.out <- lm(log(realincwage) ~ . -numprec, data = data.reg, weights=numprec)
+reg.out <- lm(log(realincwage) ~ ., data = data.reg[train,])
 summary(reg.out)
 
 ```
+We can see from the summary, that the full Linear regression model explains 63.32% of variance associated with the response variable. Overall, while some dummy variables are not significant, we can conclude that the model is all predictors are significant as the p-value associated with the F-statistic is highly significant.
+
+The year variable has a positive coefficient, which means that on average, people earn more every year.
+The p-value associated with region12 is larger than 0.05, which means that there's no significant difference between the average income in the aforementioned region and the base region.
+The negative coefficients for all the significant *relate* levels shows that most people earn less that the head of their household, which was used as a base class.
+The coefficient of the sex2 variable shows the same result obtained with anova analysis, there's a significant difference between the earnings of males and females with the later earning less than the former.
+Regarding race, white people tend to earn more than others with the Hispanic having lower earnings on average.
+Interestingly, married individuals with a present spouse tend to earn more on average than other people.
+The positive education coefficients indicate that each subsequent level of education achieved leads to increase in average earnings. We previously fitted the model with different categories for grades finished at school and these didn't have any significant differences with people who didn't attend school.
+Regarding occupation, architect was used as a base class and we can see that on average, only managers, healthcare workers, computer workers, lawyers and physician earn more than architects. On average, lawyers and physicians have the highest earnings, while people doing building related jobs have the lowest wage earning.
+Regarding industry, the  p-value associated with Hotels and Restaurants, Retain Trade, Social work, arts and other services is larger than 0.05 threshold, which means that there's no significant difference between the mentioned classes and the base class (agriculture).
+Public sector workers tend to earn more than private sector workers.
+
+
 ```{r}
-plot(fitted.values(reg.out), residuals(reg.out), pch=20)
-abline(h=0, col="blue", lwd=2)
+par(mfrow=c(2,2))
+plot(reg.out)
+par(mfrow=c(1,1))
+```
+The residuals vs fitted values behave well and we don't see any systematic behaviors.
+The Q-Q plot shows that the observations don't follow the normal distribution and have fat tails. This could mean that the error terms follow the t-student distribution, however, according tot he CLT, with large number of samples it will behave similarly to the normal distribution.
+The scale location plot shows that there is some systematic behavior as the red line goes down a bit in the middle. 
+
+
+Calculating the MSE on the test set:
+```{r}
+lm.pred.new <- predict(reg.out, newdata = data.reg[test, ])
+lm.pred <- predict(reg.out)
+mean((lm.pred - y[train])^2)
+mean((lm.pred.new - y[test])^2)
 ```
 
-## Forward selection
+
+```{r}
+library(car)
+
+vif(reg.out)
+```
+The variance inflation factor analysis shows that there's not problematic collinearity among the predictors. 
+
+#### Forward selection
 ```{r}
 library(leaps)
-regfit.fwd <- regsubsets(log(realincwage) ~ . ,data=data.reg, weights = data.reg$numprec, method="forward", nvmax=100)
+regfit.fwd <- regsubsets(log(realincwage) ~ . , data=data.reg, method="forward", nvmax=100)
 fwd.summary <-summary(regfit.fwd)
 plot(regfit.fwd, scale="bic")
 
 ```
 
+
 ```{r}
-fwd.summary <- summary(regfit.fwd)
+par(mfrow=c(1,3))
 plot(fwd.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
-which.min(fwd.summary$bic)
-#points(6,fwd.summary$bic[6],col="red",cex=2,pch=20)
+n.fwd <- which.min(fwd.summary$bic)
+points(n.fwd,fwd.summary$bic[n.fwd],col="red",cex=2,pch=20)
+
+plot(fwd.summary$adjr2,xlab="Number of Variables",ylab="Adj R2",type='l')
+n.fwd <- which.max(fwd.summary$adjr2)
+points(n.fwd,fwd.summary$adjr2[n.fwd],col="red",cex=2,pch=20)
+
+plot(fwd.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+n.fwd <- which.min(fwd.summary$cp)
+points(n.fwd,fwd.summary$cp[n.fwd],col="red",cex=2,pch=20)
+par(mfrow=c(1,1))
 ```
+We can see that using BIC, Adj R^2 and AIC as a selection parameter, the subset which includes almost all of the variables is the best. In fact, only some of dummy variables are excluded from the model, which is impossible to implement in practice. Thus, we will stic to the full model.
 
+#### Backward selection
 ```{r}
-fwd.summary$rsq
-```
-
-
-```{r}
-summary(regfit.fwd,10)
-```
-
-
-
-## Backward selection
-```{r}
-regfit.bwd <- regsubsets(log(realincwage)~. -numprec, data=data.reg, weights=data.reg$numprec, method="backward", nvmax=100)
+regfit.bwd <- regsubsets(log(realincwage)~. -numprec, data=data.reg, method="backward", nvmax=100)
 bwd.summary <-summary(regfit.bwd)
 plot(regfit.fwd, scale="bic")
 
+```
+```{r}
+par(mfrow=c(1,3))
 plot(bwd.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
-which.min(bwd.summary$bic)
-#points(8,bwd.summary$bic[8],col="red",cex=2,pch=20)
+n.bwd.bic <- which.min(bwd.summary$bic)
+points(n.bwd.bic,bwd.summary$bic[n.bwd.bic],col="red",cex=2,pch=20)
+
+plot(bwd.summary$adjr2,xlab="Number of Variables",ylab="Adj R2",type='l')
+n.bwd <- which.max(bwd.summary$adjr2)
+points(n.bwd,bwd.summary$adjr2[n.bwd],col="red",cex=2,pch=20)
+
+plot(bwd.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+n.bwd <- which.min(bwd.summary$cp)
+points(n.bwd,bwd.summary$cp[n.bwd],col="red",cex=2,pch=20)
+par(mfrow=c(1,1))
 ```
 
 
 ```{r}
-coef(regfit.bwd,9)
+n.bwd.bic
+coef(regfit.bwd,n.bwd.bic)
+```
+```{r}
+summary(regfit.bwd, 83)
 ```
 
+
+### Ridge regression
+```{r}
+library(glmnet)
+
+X <- model.matrix(log(realincwage) ~ . , data = data.reg)
+X <- X[,-1]
+y.test <- y[test]
+grid <- 10^seq(3, -4, length=100)
+
+ridge.mod <- glmnet(X, y, alpha=0, standardize = TRUE)
+plot(ridge.mod, label=TRUE)
+
+```
+```{r}
+cv.out <- cv.glmnet(X[train, ], y[train], alpha = 0, nfold=10, type.measure = "mse")
+plot(cv.out)
+```
+
+```{r}
+bestlam <- cv.out$lambda.min
+bestlam
+
+```
+
+```{r}
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = X[test, ])
+mean((ridge.pred - y.test)^2)
+```
+```{r}
+ridge.pred2 <- predict(ridge.mod, s = 0, newx = X[test, ])
+mean((ridge.pred2 - y.test)^2)
+```
+
+
+```{r}
+out <- glmnet(X, y, alpha = 0)
+predict(out, type = "coefficients", s = bestlam)
+```
+```{r}
+coef(out)[,100]
+```
+
+
+### Lasso Regression
+
+```{r}
+lasso.mod <- glmnet(X[train,],y[train],alpha=1,lambda=grid)
+plot(lasso.mod, label=TRUE)
+```
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(X[train,], y[train], alpha=1)
+plot(cv.out)
+```
+
+```{r}
+bestlam <- cv.out$lambda.min
+bestlam
+lasso.pred <- predict(lasso.mod, s=bestlam, newx=X[test,])
+mean((lasso.pred-y.test)^2)
+```
+
+```{r}
+lasso.pred <- predict(lasso.mod, s=0.01, newx=X[test,])
+mean((lasso.pred-y.test)^2)
+```
+```{r}
+i <-50
+lasso.mod$lambda[i]
+beta.L <- coef(lasso.mod)[,i]
+beta.L[beta.L != 0]
+```
+We can see here that the best lambda 0.00012 doesn't eliminate any variables from that model. This proves our conclusions reached with the forward and backward elimination methods.
+By choosing 50th lambda, which is equal to 0.343, we can see that except for the intercept, 2 most important variables are *wkswork1* and *uhrswork*. Thus, we will fit a polynomial regression using these variables. 
+
+### Polynomial regression
+
+```{r}
+reg.out <- lm(log(realincwage) ~ . +I(uhrswork^2) + I(wkswork1^2), data = data.reg[train,])
+summary(reg.out)
+```
+We can see that adding 2 square terms increased the R-squared from 0.63 to 0.66. The negative coefficient for *uhrswork^2* and *wkswork1^2* indicates that at some point, there's no additional income caused by working more.
+
+```{r}
+reg.pred <- predict(reg.out, newdata = data.reg[test, ])
+mean((reg.pred-y.test)^2)
+
+```
